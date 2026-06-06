@@ -127,19 +127,23 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const refreshPersonal = useCallback(() => {
     setPersonalSyncing(true);
     setPersonalSynced("Синхронизация…");
-    setTimeout(() => {
-      setStore((prev) => ({
-        ...prev,
-        assets: prev.assets.map((a) =>
-          a.src === "sync"
-            ? { ...a, value: Math.round(a.value * (1 + (Math.random() * 0.04 - 0.012))), delta: +(Math.random() * 6 - 1.5).toFixed(1) }
-            : a
-        ),
-      }));
-      setPersonalSyncing(false);
-      setPersonalSynced("Обновлено только что");
-      toast("Кошельки синхронизированы · цены обновлены");
-    }, 900);
+    fetch("/api/sync/crypto", { method: "POST" })
+      .then((r) => r.json().catch(() => ({})))
+      .then((res) => {
+        setPersonalSyncing(false);
+        if (res && res.ok && Array.isArray(res.coins) && res.coins.length) {
+          toast("Балансы обновлены · цены актуальны");
+          window.location.reload();
+        } else {
+          setPersonalSynced("Обновлено только что");
+          toast("Синхронизация недоступна (нет доступа к блокчейну/курсам)");
+        }
+      })
+      .catch(() => {
+        setPersonalSyncing(false);
+        setPersonalSynced("Обновлено только что");
+        toast("Не удалось синхронизировать");
+      });
   }, [toast]);
 
   const persistReserves = useCallback((r: Reserves) => {

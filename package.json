@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force"
+    "db:reset": "prisma migrate reset --force",
+    "worker": "tsx src/worker/index.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -24,6 +25,7 @@
     "googleapis": "^173.0.0",
     "jose": "^6.2.3",
     "next": "14.2.35",
+    "node-cron": "^4.2.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "server-only": "^0.0.1"
@@ -31,6 +33,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "20.14.10",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "dotenv": "^17.4.2",

@@ -29,8 +29,34 @@ services:
       APP_EMAIL: "${APP_EMAIL:-admin@capital.local}"
       APP_PASSWORD: "${APP_PASSWORD:-capital123}"
       NODE_ENV: "production"
+      # integrations
+      GOOGLE_SHEETS_ID: "${GOOGLE_SHEETS_ID:-}"
+      GOOGLE_SHEETS_EXPENSES_TAB: "${GOOGLE_SHEETS_EXPENSES_TAB:-Отчет}"
+      GOOGLE_SHEETS_CATEGORIES_TAB: "${GOOGLE_SHEETS_CATEGORIES_TAB:-Категории }"
+      GOOGLE_SERVICE_ACCOUNT_JSON: "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
+      FX_USD_RUB: "${FX_USD_RUB:-95}"
+      EXPENSE_EXCLUDE: "${EXPENSE_EXCLUDE:-Снятие наличных,Обналичивание крипты}"
+      CMC_API_KEY: "${CMC_API_KEY:-}"
+      EVM_RPC_URL: "${EVM_RPC_URL:-}"
+      TRONGRID_API_KEY: "${TRONGRID_API_KEY:-}"
+      TON_API_KEY: "${TON_API_KEY:-}"
+      CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
     ports:
       - "3000:3000"
+
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      APP_URL: "http://app:3000"
+      CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
+      SYNC_CRYPTO_CRON: "${SYNC_CRYPTO_CRON:-*/10 * * * *}"
+      SYNC_EXPENSES_CRON: "${SYNC_EXPENSES_CRON:-0 * * * *}"
+    # Bypass the migrate/seed entrypoint — only the app runs migrations.
+    entrypoint: ["npm", "run", "worker"]
 
 volumes:
   pgdata:

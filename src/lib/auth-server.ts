@@ -10,6 +10,14 @@ export async function getSession(): Promise<SessionPayload | null> {
   return token ? verifySession(token) : null;
 }
 
+/** Allow a request if it has a valid session OR the internal cron key
+ *  (used by the background worker to trigger syncs). */
+export async function authorizeSync(req: Request): Promise<boolean> {
+  if (await getSession()) return true;
+  const key = req.headers.get("x-cron-key");
+  return !!key && !!process.env.CRON_SECRET && key === process.env.CRON_SECRET;
+}
+
 /** Verify password against the stored user. Single-user: falls back to the
  *  only user when no email is supplied.
  *
