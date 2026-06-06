@@ -10,6 +10,7 @@ export default function Expenses() {
   const f = store.flows.expenses;
   const maxM = Math.max(...store.expenseMonths.map((x) => x.v));
   const maxC = Math.max(...store.expenseCats.map((x) => x.value));
+  const lastMonth = store.expenseMonths[store.expenseMonths.length - 1]?.m ?? "";
 
   return (
     <>
@@ -19,7 +20,7 @@ export default function Expenses() {
         <div className="card" style={{ padding: 24 }}>
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20 }}>
             <div>
-              <div className="k">Расходы за июнь</div>
+              <div className="k">Расходы за {lastMonth.toLowerCase()}</div>
               <div className="mono" style={{ fontSize: 40, fontWeight: 500, letterSpacing: "-.025em", marginTop: 6, lineHeight: 1 }}>
                 {fmt(f.value)}
               </div>

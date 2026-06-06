@@ -43,14 +43,18 @@ function companyFallback(): CompanyData {
 
 export async function getPersonalData(): Promise<PersonalData> {
   try {
-    const [assetRows, dividendRows, monthRows, catRows, coinRows, sync] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, latestCat] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
-      prisma.expenseCategory.findMany({ orderBy: { value: "desc" } }),
       prisma.coinAllocation.findMany({ orderBy: { pct: "desc" } }),
       prisma.syncState.findUnique({ where: { source: "crypto" } }),
+      prisma.expenseCategory.findFirst({ orderBy: { period: "desc" } }),
     ]);
+    // Category breakdown for the most recent period only.
+    const catRows = latestCat
+      ? await prisma.expenseCategory.findMany({ where: { period: latestCat.period }, orderBy: { value: "desc" } })
+      : [];
 
     const assets: Asset[] = assetRows.map((a) => ({
       id: a.slug ?? a.id,
