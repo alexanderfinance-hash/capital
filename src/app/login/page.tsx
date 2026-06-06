@@ -8,25 +8,29 @@ function LoginForm() {
   const params = useSearchParams();
   const from = params.get("from") || "/";
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    setError(false);
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (res.ok) {
-      router.replace(from);
-      router.refresh();
-    } else {
-      setError(true);
-      setLoading(false);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        router.replace(from);
+        router.refresh();
+        return;
+      }
+      setError(res.status === 401 ? "Неверный пароль" : "Ошибка сервера. Проверьте, что выполнен «npx prisma generate».");
+    } catch {
+      setError("Не удалось связаться с сервером");
     }
+    setLoading(false);
   }
 
   return (
@@ -57,13 +61,13 @@ function LoginForm() {
             value={password}
             onChange={(e) => {
               setPassword(e.target.value);
-              setError(false);
+              setError(null);
             }}
           />
         </label>
 
         {error && (
-          <div style={{ color: "var(--neg)", fontSize: 12.5, marginBottom: 12 }}>Неверный пароль</div>
+          <div style={{ color: "var(--neg)", fontSize: 12.5, marginBottom: 12 }}>{error}</div>
         )}
 
         <button className="btn primary" type="submit" disabled={loading} style={{ width: "100%", justifyContent: "center" }}>
