@@ -9,3 +9,7 @@ docker-compose.yml
 .dockerignore
 *.md
 /tmp
+secrets
+docker-compose.prod.yml
+Caddyfile
+deploy.sh

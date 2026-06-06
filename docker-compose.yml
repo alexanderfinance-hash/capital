@@ -13,9 +13,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    # Expose locally for inspection (psql/Prisma Studio). Remove on prod if not needed.
+    # Bound to localhost only — DB is never exposed to the public internet.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   app:
     build: .
@@ -41,8 +41,13 @@ services:
       TRONGRID_API_KEY: "${TRONGRID_API_KEY:-}"
       TON_API_KEY: "${TON_API_KEY:-}"
       CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
+      # Service-account key is mounted (below) rather than baked into the image.
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/app/secrets/google-service-account.json}"
+    volumes:
+      - ./secrets:/app/secrets:ro
+    # Bound to localhost; public traffic goes through Caddy (docker-compose.prod.yml).
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
   worker:
     build: .
