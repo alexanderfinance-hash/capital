@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { AppProvider } from "@/lib/store";
-import { Toast } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "Дашборд капитала",
@@ -24,10 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <AppProvider>
-          {children}
-          <Toast />
-        </AppProvider>
+        {children}
       </body>
     </html>
   );

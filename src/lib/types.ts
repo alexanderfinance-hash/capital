@@ -91,3 +91,27 @@ export interface Reserves {
   salaryWeeks: number;
   tech: number;
 }
+
+/* ---- Shapes passed from server → client store ---- */
+export interface PersonalData {
+  assets: Asset[];
+  flows: { expenses: FlowExpenses; dividends: FlowDividends };
+  expenseCats: ExpenseCat[];
+  expenseMonths: ExpenseMonth[];
+  coins: CoinAlloc[];
+  dividendsList: Dividend[];
+  synced: string;
+}
+
+export interface CompanyData {
+  wallets: Wallet[];
+  agencies: Agency[];
+  reserves: Reserves;
+  history: HistoryPoint[];
+  synced: string;
+}
+
+export interface InitialData {
+  personal: PersonalData;
+  company: CompanyData;
+}

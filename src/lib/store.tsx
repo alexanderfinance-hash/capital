@@ -1,8 +1,8 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { initialStore, WALLETS, AGENCIES, DEFAULT_RESERVES, HISTORY } from "./mockData";
-import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint } from "./types";
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { DEFAULT_RESERVES } from "./mockData";
+import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData } from "./types";
 
 export type CompanyLayout = "dash" | "calc" | "report";
 export interface OpenGroups {
@@ -31,7 +31,7 @@ interface AppState {
   personalSyncing: boolean;
 
   /* company */
-  wallets: typeof WALLETS;
+  wallets: Wallet[];
   history: HistoryPoint[];
   reserves: Reserves;
   setReserve: (key: keyof Reserves, value: number) => void;
@@ -62,44 +62,58 @@ export function useApp(): AppState {
   return c;
 }
 
-function loadReserves(): Reserves {
-  if (typeof window === "undefined") return { ...DEFAULT_RESERVES };
+/** Fire-and-forget JSON request; failures (e.g. dev without DB) are swallowed
+ *  so the optimistic UI update stands. Returns parsed body or null. */
+async function api(method: string, url: string, body: unknown): Promise<any | null> {
   try {
-    const raw = window.localStorage.getItem("lb_reserves");
-    if (raw) return { ...DEFAULT_RESERVES, ...JSON.parse(raw) };
-  } catch {}
-  return { ...DEFAULT_RESERVES };
+    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) return null;
+    return await res.json().catch(() => ({}));
+  } catch {
+    return null;
+  }
 }
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
+export function AppProvider({ initial, children }: { initial: InitialData; children: React.ReactNode }) {
   const [store, setStore] = useState<PersonalStore>(() => ({
-    ...initialStore,
-    assets: initialStore.assets.map((a) => ({ ...a })),
-    dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
+    assets: initial.personal.assets.map((a) => ({ ...a })),
+    flows: { expenses: { ...initial.personal.flows.expenses }, dividends: { ...initial.personal.flows.dividends } },
+    expenseCats: initial.personal.expenseCats.map((c) => ({ ...c })),
+    expenseMonths: initial.personal.expenseMonths.map((m) => ({ ...m })),
+    coins: initial.personal.coins.map((c) => ({ ...c })),
+    dividendsList: initial.personal.dividendsList.map((d) => ({ ...d })),
   }));
-  const [personalSynced, setPersonalSynced] = useState("Обновлено 2 мин назад");
+  const [personalSynced, setPersonalSynced] = useState(initial.personal.synced);
   const [personalSyncing, setPersonalSyncing] = useState(false);
 
-  const [reserves, setReserves] = useState<Reserves>({ ...DEFAULT_RESERVES });
-  const [agencies, setAgencies] = useState<Agency[]>(() => AGENCIES.map((a) => ({ ...a })));
+  const [reserves, setReserves] = useState<Reserves>(initial.company.reserves);
+  const [agencies, setAgencies] = useState<Agency[]>(initial.company.agencies.map((a) => ({ ...a })));
+  const [wallets] = useState<Wallet[]>(initial.company.wallets.map((w) => ({ ...w })));
+  const [history] = useState<HistoryPoint[]>(initial.company.history.map((h) => ({ ...h })));
   const [open, setOpen] = useState<OpenGroups>({ clean: true, dirtyMain: false, dirtySmall: false, agencies: false });
   const [editing, setEditing] = useState<string | null>(null);
   const [layout, setLayout] = useState<CompanyLayout>("dash");
-  const [companySynced, setCompanySynced] = useState("2 мин назад");
+  const [companySynced, setCompanySynced] = useState(initial.company.synced);
   const [companySyncing, setCompanySyncing] = useState(false);
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // hydrate reserves from localStorage after mount (avoids SSR mismatch)
-  useEffect(() => {
-    setReserves(loadReserves());
-  }, []);
+  const reserveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const personalTotal = useMemo(() => store.assets.reduce((s, a) => s + a.value, 0), [store.assets]);
 
+  const toast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMsg(null), 2200);
+  }, []);
+
   const addAsset = useCallback((a: Omit<Asset, "id">) => {
-    setStore((prev) => ({ ...prev, assets: [...prev.assets, { ...a, id: "u" + Date.now() }] }));
+    const tempId = "tmp-" + Date.now();
+    setStore((prev) => ({ ...prev, assets: [...prev.assets, { ...a, id: tempId }] }));
+    api("POST", "/api/assets", a).then((res) => {
+      if (res?.id) setStore((prev) => ({ ...prev, assets: prev.assets.map((x) => (x.id === tempId ? { ...x, id: res.id } : x)) }));
+    });
   }, []);
 
   const addDividend = useCallback((d: Dividend) => {
@@ -107,12 +121,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const dividendsList = [d, ...prev.dividendsList];
       return { ...prev, dividendsList, flows: { ...prev.flows, dividends: { value: dividendsList.reduce((s, x) => s + x.amount, 0) } } };
     });
-  }, []);
-
-  const toast = useCallback((msg: string) => {
-    setToastMsg(msg);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToastMsg(null), 2200);
+    api("POST", "/api/dividends", d);
   }, []);
 
   const refreshPersonal = useCallback(() => {
@@ -133,25 +142,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 900);
   }, [toast]);
 
-  const setReserve = useCallback((key: keyof Reserves, value: number) => {
-    setReserves((prev) => {
-      const next = { ...prev, [key]: value };
-      try {
-        window.localStorage.setItem("lb_reserves", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+  const persistReserves = useCallback((r: Reserves) => {
+    if (reserveTimer.current) clearTimeout(reserveTimer.current);
+    reserveTimer.current = setTimeout(() => api("PUT", "/api/reserves", r), 400);
   }, []);
+
+  const setReserve = useCallback(
+    (key: keyof Reserves, value: number) => {
+      setReserves((prev) => {
+        const next = { ...prev, [key]: value };
+        persistReserves(next);
+        return next;
+      });
+    },
+    [persistReserves]
+  );
 
   const resetReserves = useCallback(() => {
     setReserves({ ...DEFAULT_RESERVES });
-    try {
-      window.localStorage.setItem("lb_reserves", JSON.stringify(DEFAULT_RESERVES));
-    } catch {}
+    api("PUT", "/api/reserves", DEFAULT_RESERVES);
   }, []);
 
   const setAgencyBalance = useCallback((id: string, balance: number) => {
     setAgencies((prev) => prev.map((a) => (a.id === id ? { ...a, balance, updated: "только что", staleDays: 0 } : a)));
+    api("PATCH", `/api/agencies/${id}`, { balance });
   }, []);
 
   const toggleOpen = useCallback((k: keyof OpenGroups) => {
@@ -166,7 +180,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 1100);
   }, []);
 
-  const walletsTotal = useMemo(() => WALLETS.reduce((s, w) => s + w.balance, 0), []);
+  const walletsTotal = useMemo(() => wallets.reduce((s, w) => s + w.balance, 0), [wallets]);
   const compute = useCallback((): CompanyComputed => {
     const agenciesTotal = agencies.reduce((s, a) => s + a.balance, 0);
     const salaryReserve = reserves.salaryWeekly * reserves.salaryWeeks;
@@ -183,8 +197,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     personalSynced,
     refreshPersonal,
     personalSyncing,
-    wallets: WALLETS,
-    history: HISTORY,
+    wallets,
+    history,
     reserves,
     setReserve,
     resetReserves,
