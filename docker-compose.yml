@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: capital
+      POSTGRES_PASSWORD: capital
+      POSTGRES_DB: capital
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U capital -d capital"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Expose locally for inspection (psql/Prisma Studio). Remove on prod if not needed.
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://capital:capital@db:5432/capital?schema=public"
+      AUTH_SECRET: "${AUTH_SECRET:-change-me-to-a-long-random-string}"
+      APP_EMAIL: "${APP_EMAIL:-admin@capital.local}"
+      APP_PASSWORD: "${APP_PASSWORD:-capital123}"
+      NODE_ENV: "production"
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

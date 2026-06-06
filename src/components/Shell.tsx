@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "./Icon";
 import { Badge } from "@/lib/chart";
 import { useApp } from "@/lib/store";
@@ -35,7 +35,14 @@ function isActive(pathname: string, href: string) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { personalSynced } = useApp();
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
     <div className="app-shell ds">
@@ -100,6 +107,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Icon name="gear" />
             <span>Настройки</span>
           </div>
+          <button className="nav-item" onClick={logout} style={{ width: "100%", color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--sans)", textAlign: "left" }}>
+            <Icon name="back" />
+            <span>Выйти</span>
+          </button>
         </div>
       </aside>
 

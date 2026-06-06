@@ -1,0 +1,83 @@
+"use client";
+
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+
+function LoginForm() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const from = params.get("from") || "/";
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(false);
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (res.ok) {
+      router.replace(from);
+      router.refresh();
+    } else {
+      setError(true);
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="login-wrap ds">
+      <form className="login-card" onSubmit={submit}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 22 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 9, background: "var(--brand)", display: "grid", placeItems: "center" }}>
+            <span className="mono" style={{ color: "var(--brand-ink)", fontSize: 17, fontWeight: 600 }}>
+              К
+            </span>
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: ".02em" }}>КАПИТАЛ</div>
+            <div className="k" style={{ fontSize: 9 }}>
+              вход в дашборд
+            </div>
+          </div>
+        </div>
+
+        <label className="fld" style={{ marginBottom: 14 }}>
+          <span className="k">Пароль</span>
+          <input
+            type="password"
+            autoFocus
+            autoComplete="current-password"
+            placeholder="••••••••"
+            className={error ? "err" : ""}
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(false);
+            }}
+          />
+        </label>
+
+        {error && (
+          <div style={{ color: "var(--neg)", fontSize: 12.5, marginBottom: 12 }}>Неверный пароль</div>
+        )}
+
+        <button className="btn primary" type="submit" disabled={loading} style={{ width: "100%", justifyContent: "center" }}>
+          {loading ? "Вход…" : "Войти"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}

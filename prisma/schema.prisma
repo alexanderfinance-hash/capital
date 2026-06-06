@@ -1,0 +1,180 @@
+// Capital Dashboard — DB schema.
+// Fields mirror the prototype mock contracts (STORE/CHARTS, WALLETS/AGENCIES/
+// HISTORY/DEFAULT_RESERVES). One row in each table = one real record once the
+// integrations (Stages 4–6) start writing live data.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DataSource {
+  sync
+  sheets
+  manual
+}
+
+enum AssetBucket {
+  crypto
+  vehicles
+  cash
+  other
+}
+
+enum Chain {
+  BTC
+  ETH
+  TRX
+  TON
+}
+
+enum WalletScope {
+  personal
+  company
+}
+
+enum WalletGroup {
+  clean
+  dirty
+}
+
+enum WalletKind {
+  main
+  small
+}
+
+enum SnapshotScope {
+  personal
+  company
+}
+
+/// Single app user (password login). Multi-user ready, but seeded with one.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  role         String   @default("admin")
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+/// Personal assets shown on Обзор / Активы (manual + synced aggregates).
+model Asset {
+  id        String      @id @default(cuid())
+  slug      String?     @unique // stable id for seeded rows (e.g. "crypto")
+  icon      String
+  name      String
+  value     Decimal     @db.Decimal(18, 2)
+  delta     Decimal?    @db.Decimal(6, 2)
+  source    DataSource
+  bucket    AssetBucket
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+/// Blockchain addresses to sync (both contours). Company USDT-TRC20 wallets
+/// carry group (clean/dirty) and kind (main/small); personal crypto does not.
+model Wallet {
+  id           String       @id @default(cuid())
+  slug         String?      @unique // stable id for seeded rows (e.g. "w_clean_1")
+  scope        WalletScope
+  chain        Chain
+  token        String // "USDT", "BTC", "ETH", "TRX", "TON"
+  address      String
+  label        String
+  group        WalletGroup?
+  kind         WalletKind?
+  balance      Decimal      @default(0) @db.Decimal(30, 8) // token units
+  balanceUsd   Decimal      @default(0) @db.Decimal(18, 2)
+  lastSyncedAt DateTime?
+  createdAt    DateTime     @default(now())
+
+  @@unique([chain, address, token])
+}
+
+/// Ad agency balances — manual entry per agency.
+model Agency {
+  id        String   @id @default(cuid())
+  slug      String?  @unique
+  platform  String
+  name      String
+  balance   Decimal  @db.Decimal(18, 2)
+  enteredBy String
+  updatedAt DateTime @default(now()) // staleDays derived from now() - updatedAt
+  createdAt DateTime @default(now())
+}
+
+/// What-if reserves (singleton). Formula: available = wallets + agencies
+/// − salaryWeekly×salaryWeeks − tech.
+model Reserve {
+  id           String   @id @default("default")
+  salaryWeekly Int
+  salaryWeeks  Int
+  tech         Int
+  updatedAt    DateTime @updatedAt
+}
+
+/// Dividend payouts — manual entry; YTD is an aggregate.
+model Dividend {
+  id        String   @id @default(cuid())
+  name      String
+  amount    Decimal  @db.Decimal(18, 2)
+  paidAt    DateTime
+  createdAt DateTime @default(now())
+}
+
+/// Monthly expense totals (imported from Google Sheets, Stage 5).
+model ExpenseMonth {
+  id         String   @id @default(cuid())
+  label      String
+  monthStart DateTime
+  value      Decimal  @db.Decimal(18, 2)
+
+  @@unique([monthStart])
+}
+
+/// Expense breakdown by category for a given period.
+model ExpenseCategory {
+  id     String  @id @default(cuid())
+  name   String
+  value  Decimal @db.Decimal(18, 2)
+  period String // "2025-06"
+
+  @@unique([period, name])
+}
+
+/// Coin allocation for the investments view (derived from wallets in Stage 6).
+model CoinAllocation {
+  id     String @id @default(cuid())
+  ticker String @unique
+  pct    Int
+}
+
+/// Capital history — one row per successful sync; drives history charts and
+/// the "обновлено N мин назад" label.
+model CapitalSnapshot {
+  id         String        @id @default(cuid())
+  scope      SnapshotScope
+  value      Decimal       @db.Decimal(18, 2)
+  capturedAt DateTime      @default(now())
+
+  @@index([scope, capturedAt])
+}
+
+/// Latest token prices in USD (CoinGecko/Binance, Stage 6).
+model PriceCache {
+  symbol    String   @id // "BTC", "ETH", "TRX", "TON", "USDT"
+  usd       Decimal  @db.Decimal(18, 8)
+  fetchedAt DateTime @default(now())
+}
+
+/// Last successful sync per data source (for badges / "N мин назад").
+model SyncState {
+  source       String    @id // "crypto", "sheets"
+  lastSyncedAt DateTime?
+  ok           Boolean   @default(true)
+}
