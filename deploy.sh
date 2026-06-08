@@ -38,6 +38,7 @@ fi
 # Read DOMAIN (optional). If empty → self-signed HTTPS by IP.
 DOMAIN_VAL=$(grep '^DOMAIN=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs || true)
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+export SERVER_IP
 
 if [ -n "$DOMAIN_VAL" ]; then
   say "Режим: домен $DOMAIN_VAL (Let's Encrypt, доверенный HTTPS)."

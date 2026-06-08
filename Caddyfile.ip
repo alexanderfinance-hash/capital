@@ -1,10 +1,11 @@
 # HTTPS by IP with a self-signed (internal CA) certificate — no domain needed.
-# Browser shows a one-time warning; click "Advanced → proceed".
+# SITE_ADDR (e.g. https://45.143.93.177) is provided by deploy.sh so the internal
+# cert includes the server IP. Browser shows a one-time warning → "proceed".
 {
 	auto_https disable_redirects
 }
 
-:443 {
+{$SITE_ADDR} {
 	tls internal
 	encode zstd gzip
 	reverse_proxy app:3000
