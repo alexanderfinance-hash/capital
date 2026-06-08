@@ -142,6 +142,10 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     const personalTotal = allAssets.reduce((s, a) => s + Number(a.value), 0);
     await tx.capitalSnapshot.create({ data: { scope: "personal", value: personalTotal } });
 
+    // crypto-portfolio snapshot (Investments chart — PRD §6: третий ряд снимков)
+    const cryptoTotal = allAssets.filter((a) => a.bucket === "crypto").reduce((s, a) => s + Number(a.value), 0);
+    await tx.capitalSnapshot.create({ data: { scope: "crypto", value: cryptoTotal } });
+
     // company snapshot (wallets + agencies)
     const companyWallets = await tx.wallet.findMany({ where: { scope: "company" } });
     const agencies = await tx.agency.findMany();

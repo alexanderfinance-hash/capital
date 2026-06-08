@@ -51,6 +51,14 @@ export interface ChartSeries {
   a: string;
 }
 
+/** One dated capital snapshot — drives the real history line charts (PRD §6).
+ *  `t` is an ISO timestamp (for period filtering); `label` is "5 июн". */
+export interface SnapshotPoint {
+  t: string;
+  label: string;
+  value: number;
+}
+
 export interface CryptoWalletHolding {
   symbol: string;
   chain: string;
@@ -133,6 +141,8 @@ export interface PersonalData {
   cryptoWallets: CryptoWalletHolding[];
   personalWallets: PersonalWalletRow[];
   dividendsList: Dividend[];
+  capitalHistory: SnapshotPoint[];
+  cryptoHistory: SnapshotPoint[];
   synced: string;
 }
 

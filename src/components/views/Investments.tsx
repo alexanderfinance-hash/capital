@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useApp } from "@/lib/store";
-import { CHARTS, PERIODS } from "@/lib/mockData";
+import { PERIODS } from "@/lib/mockData";
 import { fmt, fmtAmount } from "@/lib/format";
-import { LineChart, Chip, Badge } from "@/lib/chart";
+import { LineChart, Chip, Badge, ChartEmpty, seriesForPeriod } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow, SyncStamp } from "../ui";
 import { AddPersonalWalletModal } from "../AddPersonalWalletModal";
@@ -12,11 +12,11 @@ import { AddPersonalWalletModal } from "../AddPersonalWalletModal";
 const CHAIN_LABEL: Record<string, string> = { BTC: "Bitcoin", ETH: "Ethereum", TRX: "Tron", TON: "TON" };
 
 export default function Investments() {
-  const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast } = useApp();
+  const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast, cryptoHistory } = useApp();
   const [period, setPeriod] = useState("6М");
   const [openSym, setOpenSym] = useState<string | null>(null);
   const [walletModal, setWalletModal] = useState(false);
-  const c = CHARTS[period];
+  const c = seriesForPeriod(cryptoHistory, period);
   const cr = store.assets.filter((a) => a.bucket === "crypto");
   const crTotal = cr.reduce((s, a) => s + a.value, 0);
 
@@ -43,11 +43,12 @@ export default function Investments() {
                 {fmt(crTotal)}
               </div>
             </div>
-            <div style={{ paddingBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 4 }}>
+              {!c.empty && <Chip d={c.deltaPct} />}
               <Badge src="sync" />
             </div>
           </div>
-          <LineChart vals={c.v} labels={c.l} />
+          {c.empty ? <ChartEmpty /> : <LineChart vals={c.vals} labels={c.labels} />}
         </div>
 
         <div className="card" style={{ padding: 24 }}>

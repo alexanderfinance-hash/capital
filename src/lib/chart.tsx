@@ -1,6 +1,51 @@
 import React from "react";
 import { fmt, fmtK } from "./format";
-import type { Asset, HistoryPoint } from "./types";
+import type { Asset, HistoryPoint, SnapshotPoint } from "./types";
+
+/* ===== Real-history series (PRD §6) ===== */
+const PERIOD_DAYS: Record<string, number> = { "1М": 31, "6М": 184, "1Г": 366 };
+
+export interface Series {
+  vals: number[]; // in thousands (for LineChart)
+  labels: string[]; // sparse — empty string = no tick
+  deltaPct: number;
+  deltaAbs: number; // signed, in dollars
+  empty: boolean;
+}
+
+/** Filter dated snapshots to the selected period and shape them for LineChart.
+ *  No artificial stretching: shows only as much history as actually exists; if
+ *  the chosen period is longer than the data, the available range is shown. */
+export function seriesForPeriod(points: SnapshotPoint[], period: string): Series {
+  const days = PERIOD_DAYS[period] ?? 184;
+  const cutoff = Date.now() - days * 86400000;
+  let pts = points.filter((p) => new Date(p.t).getTime() >= cutoff);
+  // Keep at least the two most recent points so a line can always be drawn
+  // once history exists, even if the period window is very short.
+  if (pts.length < 2 && points.length >= 2) pts = points.slice(-2);
+  if (pts.length < 2) return { vals: [], labels: [], deltaPct: 0, deltaAbs: 0, empty: true };
+
+  const vals = pts.map((p) => p.value / 1000);
+  const n = pts.length;
+  // Show ~6 evenly-spaced labels (plus the last) to avoid clutter on dense data.
+  const step = Math.max(1, Math.ceil(n / 6));
+  const labels = pts.map((p, i) => (i % step === 0 || i === n - 1 ? p.label : ""));
+
+  const first = pts[0].value;
+  const last = pts[n - 1].value;
+  const deltaAbs = last - first;
+  const deltaPct = first ? +((deltaAbs / first) * 100).toFixed(1) : 0;
+  return { vals, labels, deltaPct, deltaAbs, empty: false };
+}
+
+/** Placeholder shown until enough history accumulates (PRD §6). */
+export function ChartEmpty({ height = 240 }: { height?: number }) {
+  return (
+    <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 12.5, textAlign: "center", padding: "0 24px" }}>
+      График появится, когда накопится история синхронизаций.
+    </div>
+  );
+}
 
 /* Catmull-Rom-ish smoothing — identical to prototype's smooth(). */
 function smooth(pts: number[][]): string {
@@ -69,6 +114,7 @@ export function LineChart({ vals, labels, o = {} }: { vals: number[]; labels?: s
   const xl: React.ReactNode[] = [];
   if (labels)
     labels.forEach((m, i) => {
+      if (!m) return; // skip empty (sparse) labels
       xl.push(
         <text key={`x${i}`} className="axis" x={+X(i).toFixed(1)} y={bot + 24} textAnchor="middle">
           {m}
