@@ -22,26 +22,53 @@ export interface CryptoSyncResult {
   wallets: { address: string; chain: string; scope: string; holdings: Holding[]; usd: number }[];
 }
 
+// Last known holdings persisted on the wallet (used when a live fetch fails so
+// we keep the previous balance instead of zeroing it — PRD §7).
+function lastKnownHoldings(holdingsJson: unknown): Holding[] {
+  if (!Array.isArray(holdingsJson)) return [];
+  return holdingsJson
+    .map((h: any) => ({ symbol: String(h?.symbol || ""), amount: Number(h?.amount || 0) }))
+    .filter((h) => h.symbol && h.amount > 0);
+}
+
 export async function syncCrypto(providers: CryptoProviders = defaultProviders): Promise<CryptoSyncResult> {
   const wallets = await prisma.wallet.findMany();
 
-  // 1) Fetch holdings per wallet.
-  const fetched: { id: string; scope: string; chain: string; address: string; holdings: Holding[] }[] = [];
+  // 1) Fetch holdings per wallet. On a fetch failure we fall back to the last
+  //    known holdings and mark the wallet `stale` so persistence skips it.
+  const fetched: { id: string; scope: string; chain: string; address: string; holdings: Holding[]; stale: boolean }[] = [];
   const personalBySymbol = new Map<string, number>();
   const allSymbols = new Set<string>();
   for (const w of wallets) {
     const fetcher = providers[w.chain as keyof CryptoProviders] as ((a: string) => Promise<Holding[]>) | undefined;
-    const holdings = typeof fetcher === "function" ? await fetcher(w.address) : [];
-    fetched.push({ id: w.id, scope: w.scope, chain: w.chain, address: w.address, holdings });
+    let holdings: Holding[];
+    let stale = false;
+    if (typeof fetcher !== "function") {
+      holdings = lastKnownHoldings(w.holdingsJson);
+      stale = true;
+    } else {
+      try {
+        holdings = await fetcher(w.address);
+      } catch {
+        holdings = lastKnownHoldings(w.holdingsJson);
+        stale = true;
+      }
+    }
+    fetched.push({ id: w.id, scope: w.scope, chain: w.chain, address: w.address, holdings, stale });
     for (const h of holdings) {
       allSymbols.add(h.symbol);
       if (w.scope === "personal") personalBySymbol.set(h.symbol, (personalBySymbol.get(h.symbol) || 0) + h.amount);
     }
   }
 
-  // 2) Prices for everything we found.
+  // 2) Prices for everything we found. If prices are unreachable, keep existing data.
   const symbols = [...allSymbols];
-  const prices = symbols.length ? await providers.prices(symbols) : new Map();
+  let prices = new Map();
+  try {
+    prices = symbols.length ? await providers.prices(symbols) : new Map();
+  } catch {
+    prices = new Map();
+  }
   const usdOf = (h: Holding) => h.amount * (prices.get(h.symbol)?.usd || 0);
 
   // 3) Personal per-coin aggregates.
@@ -69,8 +96,10 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
 
   // 4) Persist.
   await prisma.$transaction(async (tx) => {
-    // per-wallet balances (both contours) + per-coin breakdown
+    // per-wallet balances (both contours) + per-coin breakdown.
+    // Stale wallets (live fetch failed) keep their previous balance and lastSyncedAt.
     for (const f of fetched) {
+      if (f.stale) continue;
       const usd = f.holdings.reduce((s, h) => s + usdOf(h), 0);
       const native = f.holdings[0]?.amount ?? 0;
       const holdingsJson = f.holdings.map((h) => ({ symbol: h.symbol, amount: h.amount, usd: usdOf(h) }));
