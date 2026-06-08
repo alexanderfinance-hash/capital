@@ -70,6 +70,8 @@ model Asset {
   name      String
   value     Decimal     @db.Decimal(18, 2)
   delta     Decimal?    @db.Decimal(6, 2)
+  amount    Decimal?    @db.Decimal(30, 8) // token quantity (crypto holdings)
+  symbol    String?     // coin ticker for crypto holdings (BTC/ETH/…)
   source    DataSource
   bucket    AssetBucket
   createdAt DateTime    @default(now())

@@ -199,6 +199,20 @@ export function Donut({ assets }: { assets: Asset[] }) {
 
 /* ===== Company chart — mirrors chartHTML(available) in dashboard-company.js ===== */
 export function CompanyChart({ history, available }: { history: HistoryPoint[]; available: number }) {
+  // Need at least two points to draw a line; otherwise show a placeholder.
+  if (history.length < 2) {
+    return (
+      <div>
+        <div className="k">Динамика вывода</div>
+        <div className="h-sub" style={{ marginTop: 4 }}>
+          доступно к выводу
+        </div>
+        <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 12.5 }}>
+          График появится, когда накопится история синхронизаций.
+        </div>
+      </div>
+    );
+  }
   const vals = history.map((h) => h.value);
   vals[vals.length - 1] = available;
   const labels = history.map((h) => h.week);

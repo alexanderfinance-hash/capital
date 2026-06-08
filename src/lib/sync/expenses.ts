@@ -134,14 +134,17 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
       });
     }
 
-    // Latest month category breakdown: top 7 + "Прочее".
-    const cm = catByMonth.get(latest) || new Map();
-    const sorted = [...cm.entries()].map(([name, v]) => ({ name, value: Math.round(v) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
-    const top = sorted.slice(0, 7);
-    const restSum = sorted.slice(7).reduce((s, x) => s + x.value, 0);
-    if (restSum > 0) top.push({ name: "Прочее", value: restSum });
-    for (const c of top) {
-      await tx.expenseCategory.create({ data: { period: latest, name: c.name, value: c.value } });
+    // Category breakdown for EVERY shown month (top 7 + "Прочее") so the UI
+    // can switch months by clicking the bars.
+    for (const key of lastKeys) {
+      const cm = catByMonth.get(key) || new Map<string, number>();
+      const sorted = [...cm.entries()].map(([name, v]) => ({ name, value: Math.round(v) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
+      const top = sorted.slice(0, 7);
+      const restSum = sorted.slice(7).reduce((s, x) => s + x.value, 0);
+      if (restSum > 0) top.push({ name: "Прочее", value: restSum });
+      for (const c of top) {
+        await tx.expenseCategory.create({ data: { period: key, name: c.name, value: c.value } });
+      }
     }
 
     await tx.syncState.upsert({

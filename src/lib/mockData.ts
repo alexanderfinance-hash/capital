@@ -31,6 +31,15 @@ export const initialStore: PersonalStore = {
     { name: "Развлечения", value: 820 },
     { name: "Прочее", value: 1160 },
   ],
+  expensesByPeriod: {
+    "2025-06": [
+      { name: "Жильё", value: 3200 },
+      { name: "Питание", value: 2100 },
+      { name: "Транспорт", value: 1150 },
+      { name: "Развлечения", value: 820 },
+      { name: "Прочее", value: 1160 },
+    ],
+  },
   expenseMonths: [
     { m: "Янв", v: 9100 },
     { m: "Фев", v: 8800 },

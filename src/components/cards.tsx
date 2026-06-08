@@ -3,7 +3,7 @@
 import React from "react";
 import { Icon } from "./Icon";
 import { Badge, Chip } from "@/lib/chart";
-import { fmt } from "@/lib/format";
+import { fmt, fmtAmount } from "@/lib/format";
 import type { Asset } from "@/lib/types";
 
 export function CatCard({ a }: { a: Asset }) {
@@ -19,6 +19,11 @@ export function CatCard({ a }: { a: Asset }) {
       <div className="val">{fmt(a.value)}</div>
       <div className="row2">
         <Chip d={a.delta} />
+        {a.amount != null && a.symbol && (
+          <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
+            {fmtAmount(a.amount)} {a.symbol}
+          </span>
+        )}
       </div>
     </div>
   );

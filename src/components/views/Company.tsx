@@ -5,6 +5,8 @@ import { useApp, type CompanyComputed, type CompanyLayout, type OpenGroups } fro
 import { fmt } from "@/lib/format";
 import { Chip, CompanyChart } from "@/lib/chart";
 import { Icon } from "../Icon";
+import { AddWalletModal } from "../AddWalletModal";
+import { AddAgencyModal } from "../AddAgencyModal";
 import type { Agency, Reserves, Wallet } from "@/lib/types";
 
 const money = fmt;
@@ -59,7 +61,7 @@ function Waterfall({ c, tech }: { c: CompanyComputed; tech: number }) {
 }
 
 /* ---------- wallet group ---------- */
-function WalletGroup({ groupKey, tone, title, hint, wallets, open, onToggle }: { groupKey: keyof OpenGroups; tone: "clean" | "dirty"; title: string; hint: string; wallets: Wallet[]; open: boolean; onToggle: () => void }) {
+function WalletGroup({ groupKey, tone, title, hint, wallets, open, onToggle, onDelete }: { groupKey: keyof OpenGroups; tone: "clean" | "dirty"; title: string; hint: string; wallets: Wallet[]; open: boolean; onToggle: () => void; onDelete: (id: string) => void }) {
   const total = wallets.reduce((s, w) => s + w.balance, 0);
   const mains = wallets.filter((w) => w.type === "main").length;
   const dot = tone === "clean" ? "var(--pos)" : "var(--muted)";
@@ -101,8 +103,13 @@ function WalletGroup({ groupKey, tone, title, hint, wallets, open, onToggle }: {
                 </span>
                 <span style={{ fontSize: 10, color: "var(--faint)" }}>{w.synced}</span>
               </div>
-              <span className="mono" style={{ fontSize: 13, fontWeight: 500, textAlign: "right" }}>
-                {money(w.balance)}
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 500, textAlign: "right" }}>
+                  {money(w.balance)}
+                </span>
+                <button title="Удалить кошелёк" onClick={() => onDelete(w.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 0, display: "grid", placeItems: "center" }}>
+                  <Icon name="close" style={{ width: 14, height: 14 }} />
+                </button>
               </span>
             </div>
           ))}
@@ -164,7 +171,7 @@ function AgencyAmount({ a }: { a: Agency }) {
 }
 
 function AgenciesGroup({ c }: { c: CompanyComputed }) {
-  const { agencies, open, toggleOpen } = useApp();
+  const { agencies, open, toggleOpen, deleteAgency } = useApp();
   const isOpen = open.agencies;
   return (
     <>
@@ -202,9 +209,15 @@ function AgenciesGroup({ c }: { c: CompanyComputed }) {
                 )}
                 <span style={{ fontSize: 10, color: "var(--faint)" }}>внёс: {a.by}</span>
               </div>
-              <AgencyAmount a={a} />
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                <AgencyAmount a={a} />
+                <button title="Удалить агентство" onClick={() => deleteAgency(a.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 0, display: "grid", placeItems: "center" }}>
+                  <Icon name="close" style={{ width: 14, height: 14 }} />
+                </button>
+              </span>
             </div>
           ))}
+          {agencies.length === 0 && <div style={{ fontSize: 11, color: "var(--muted)", padding: "10px 4px" }}>Агентств пока нет.</div>}
           <div style={{ fontSize: 11, color: "var(--muted)", padding: "10px 4px 4px", borderTop: "1px solid var(--hair-2)" }}>Нажмите на сумму, чтобы изменить вручную</div>
         </div>
       )}
@@ -327,32 +340,52 @@ function ChartCard({ c }: { c: CompanyComputed }) {
 }
 
 function WalletsCard({ c }: { c: CompanyComputed }) {
-  const { wallets, open, toggleOpen } = useApp();
+  const { wallets, open, toggleOpen, deleteCompanyWallet } = useApp();
+  const [modal, setModal] = useState(false);
+  const del = deleteCompanyWallet;
   return (
     <div className="card" style={{ padding: "6px 22px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 4px 8px" }}>
         <span className="k">Кошельки USDT</span>
-        <span className="mono" style={{ fontSize: 14, fontWeight: 600 }}>
-          {money(c.walletsTotal)}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="mono" style={{ fontSize: 14, fontWeight: 600 }}>
+            {money(c.walletsTotal)}
+          </span>
+          <button className="btn primary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setModal(true)}>
+            + Кошелёк
+          </button>
+        </div>
       </div>
-      <WalletGroup groupKey="clean" tone="clean" title="Чистые" hint="отдельный контур" wallets={wallets.filter((w) => w.group === "clean")} open={open.clean} onToggle={() => toggleOpen("clean")} />
-      <WalletGroup groupKey="dirtyMain" tone="dirty" title="Грязные — основные" hint="рабочие кошельки" wallets={wallets.filter((w) => w.group === "dirty" && w.type === "main")} open={open.dirtyMain} onToggle={() => toggleOpen("dirtyMain")} />
-      <WalletGroup groupKey="dirtySmall" tone="dirty" title="Грязные — мелкие" hint="остатки" wallets={wallets.filter((w) => w.group === "dirty" && w.type === "small")} open={open.dirtySmall} onToggle={() => toggleOpen("dirtySmall")} />
+      {wallets.length === 0 && (
+        <div className="h-sub" style={{ padding: "10px 4px 16px" }}>
+          Кошельков пока нет. Нажмите «+ Кошелёк», укажите адрес и контур — баланс подтянется из блокчейна.
+        </div>
+      )}
+      <WalletGroup groupKey="clean" tone="clean" title="Чистые" hint="отдельный контур" wallets={wallets.filter((w) => w.group === "clean")} open={open.clean} onToggle={() => toggleOpen("clean")} onDelete={del} />
+      <WalletGroup groupKey="dirtyMain" tone="dirty" title="Грязные — основные" hint="рабочие кошельки" wallets={wallets.filter((w) => w.group === "dirty" && w.type === "main")} open={open.dirtyMain} onToggle={() => toggleOpen("dirtyMain")} onDelete={del} />
+      <WalletGroup groupKey="dirtySmall" tone="dirty" title="Грязные — мелкие" hint="остатки" wallets={wallets.filter((w) => w.group === "dirty" && w.type === "small")} open={open.dirtySmall} onToggle={() => toggleOpen("dirtySmall")} onDelete={del} />
+      {modal && <AddWalletModal onClose={() => setModal(false)} />}
     </div>
   );
 }
 
 function AgenciesCard({ c }: { c: CompanyComputed }) {
+  const [modal, setModal] = useState(false);
   return (
     <div className="card" style={{ padding: "6px 22px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 4px 8px" }}>
         <span className="k">Рекламные агентства</span>
-        <span className="mono" style={{ fontSize: 14, fontWeight: 600 }}>
-          {money(c.agenciesTotal)}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="mono" style={{ fontSize: 14, fontWeight: 600 }}>
+            {money(c.agenciesTotal)}
+          </span>
+          <button className="btn primary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setModal(true)}>
+            + Агентство
+          </button>
+        </div>
       </div>
       <AgenciesGroup c={c} />
+      {modal && <AddAgencyModal onClose={() => setModal(false)} />}
     </div>
   );
 }

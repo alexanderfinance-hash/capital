@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useApp } from "@/lib/store";
 import { CHARTS, PERIODS } from "@/lib/mockData";
-import { fmt } from "@/lib/format";
+import { fmt, fmtAmount } from "@/lib/format";
 import { LineChart, Chip, Badge } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow } from "../ui";
@@ -66,8 +66,13 @@ export default function Investments() {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13.5, fontWeight: 500 }}>{a.name}</div>
-              <div style={{ marginTop: 3 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
                 <Badge src={a.src} />
+                {a.amount != null && a.symbol && (
+                  <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                    {fmtAmount(a.amount)} {a.symbol}
+                  </span>
+                )}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>

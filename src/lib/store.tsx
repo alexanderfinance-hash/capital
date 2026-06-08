@@ -26,18 +26,23 @@ interface AppState {
   personalTotal: number;
   addAsset: (a: Omit<Asset, "id">) => void;
   addDividend: (d: Dividend) => void;
+  deleteAsset: (id: string) => void;
   personalSynced: string;
   refreshPersonal: () => void;
   personalSyncing: boolean;
 
   /* company */
   wallets: Wallet[];
+  addCompanyWallet: (w: { address: string; label: string; group: "clean" | "dirty"; kind: "main" | "small" }) => void;
+  deleteCompanyWallet: (id: string) => void;
   history: HistoryPoint[];
   reserves: Reserves;
   setReserve: (key: keyof Reserves, value: number) => void;
   resetReserves: () => void;
   agencies: Agency[];
   setAgencyBalance: (id: string, balance: number) => void;
+  addAgency: (a: { platform: string; name: string; balance: number; by: string }) => void;
+  deleteAgency: (id: string) => void;
   open: OpenGroups;
   toggleOpen: (k: keyof OpenGroups) => void;
   editing: string | null;
@@ -79,6 +84,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     assets: initial.personal.assets.map((a) => ({ ...a })),
     flows: { expenses: { ...initial.personal.flows.expenses }, dividends: { ...initial.personal.flows.dividends } },
     expenseCats: initial.personal.expenseCats.map((c) => ({ ...c })),
+    expensesByPeriod: initial.personal.expensesByPeriod,
     expenseMonths: initial.personal.expenseMonths.map((m) => ({ ...m })),
     coins: initial.personal.coins.map((c) => ({ ...c })),
     dividendsList: initial.personal.dividendsList.map((d) => ({ ...d })),
@@ -88,7 +94,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
 
   const [reserves, setReserves] = useState<Reserves>(initial.company.reserves);
   const [agencies, setAgencies] = useState<Agency[]>(initial.company.agencies.map((a) => ({ ...a })));
-  const [wallets] = useState<Wallet[]>(initial.company.wallets.map((w) => ({ ...w })));
+  const [wallets, setWallets] = useState<Wallet[]>(initial.company.wallets.map((w) => ({ ...w })));
   const [history] = useState<HistoryPoint[]>(initial.company.history.map((h) => ({ ...h })));
   const [open, setOpen] = useState<OpenGroups>({ clean: true, dirtyMain: false, dirtySmall: false, agencies: false });
   const [editing, setEditing] = useState<string | null>(null);
@@ -122,6 +128,47 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
       return { ...prev, dividendsList, flows: { ...prev.flows, dividends: { value: dividendsList.reduce((s, x) => s + x.amount, 0) } } };
     });
     api("POST", "/api/dividends", d);
+  }, []);
+
+  const deleteAsset = useCallback((id: string) => {
+    setStore((prev) => ({ ...prev, assets: prev.assets.filter((x) => x.id !== id) }));
+    api("DELETE", `/api/assets/${id}`, undefined);
+  }, []);
+
+  const addCompanyWallet = useCallback(
+    (w: { address: string; label: string; group: "clean" | "dirty"; kind: "main" | "small" }) => {
+      const tempId = "tmp-" + Date.now();
+      setWallets((prev) => [
+        ...prev,
+        { id: tempId, label: w.label || w.address.slice(0, 8), addr: w.address, balance: 0, type: w.kind, group: w.group, synced: "ожидает синхронизации" },
+      ]);
+      api("POST", "/api/company/wallets", w).then((res) => {
+        if (res?.id) setWallets((prev) => prev.map((x) => (x.id === tempId ? { ...x, id: res.id } : x)));
+      });
+      toast("Кошелёк добавлен · баланс подтянется при синхронизации");
+    },
+    [toast]
+  );
+
+  const deleteCompanyWallet = useCallback((id: string) => {
+    setWallets((prev) => prev.filter((x) => x.id !== id));
+    api("DELETE", `/api/company/wallets/${id}`, undefined);
+  }, []);
+
+  const addAgency = useCallback(
+    (a: { platform: string; name: string; balance: number; by: string }) => {
+      const tempId = "tmp-" + Date.now();
+      setAgencies((prev) => [...prev, { id: tempId, platform: a.platform, name: a.name, balance: a.balance, updated: "только что", staleDays: 0, by: a.by }]);
+      api("POST", "/api/agencies", a).then((res) => {
+        if (res?.id) setAgencies((prev) => prev.map((x) => (x.id === tempId ? { ...x, id: res.id } : x)));
+      });
+    },
+    []
+  );
+
+  const deleteAgency = useCallback((id: string) => {
+    setAgencies((prev) => prev.filter((x) => x.id !== id));
+    api("DELETE", `/api/agencies/${id}`, undefined);
   }, []);
 
   const refreshPersonal = useCallback(() => {
@@ -178,11 +225,22 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
 
   const refreshCompany = useCallback(() => {
     setCompanySyncing(true);
-    setTimeout(() => {
-      setCompanySyncing(false);
-      setCompanySynced("только что");
-    }, 1100);
-  }, []);
+    fetch("/api/sync/crypto", { method: "POST" })
+      .then((r) => r.json().catch(() => ({})))
+      .then((res) => {
+        setCompanySyncing(false);
+        setCompanySynced("только что");
+        if (res && res.ok) {
+          window.location.reload();
+        } else {
+          toast("Синхронизация недоступна (нет доступа к блокчейну)");
+        }
+      })
+      .catch(() => {
+        setCompanySyncing(false);
+        toast("Не удалось синхронизировать");
+      });
+  }, [toast]);
 
   const walletsTotal = useMemo(() => wallets.reduce((s, w) => s + w.balance, 0), [wallets]);
   const compute = useCallback((): CompanyComputed => {
@@ -198,16 +256,21 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     personalTotal,
     addAsset,
     addDividend,
+    deleteAsset,
     personalSynced,
     refreshPersonal,
     personalSyncing,
     wallets,
+    addCompanyWallet,
+    deleteCompanyWallet,
     history,
     reserves,
     setReserve,
     resetReserves,
     agencies,
     setAgencyBalance,
+    addAgency,
+    deleteAgency,
     open,
     toggleOpen,
     editing,

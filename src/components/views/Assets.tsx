@@ -9,7 +9,7 @@ import { Topbar } from "../ui";
 import { AddAssetModal } from "../AddAssetModal";
 
 export default function Assets() {
-  const { store, personalTotal } = useApp();
+  const { store, personalTotal, deleteAsset, toast } = useApp();
   const [modal, setModal] = useState(false);
 
   return (
@@ -29,6 +29,11 @@ export default function Assets() {
           <div className="k" style={{ padding: "14px 0 4px" }}>
             Все активы
           </div>
+          {store.assets.length === 0 && (
+            <div className="h-sub" style={{ padding: "18px 0" }}>
+              Пока нет активов. Нажмите «+ Добавить актив» (наличные, авто, ценные вещи). Крипта появится автоматически после синхронизации.
+            </div>
+          )}
           {store.assets.map((a) => (
             <div className="mlist-row" key={a.id}>
               <div className="tile">
@@ -48,6 +53,20 @@ export default function Assets() {
                   <Chip d={a.delta} />
                 </div>
               </div>
+              {a.src === "manual" ? (
+                <button
+                  title="Удалить"
+                  onClick={() => {
+                    deleteAsset(a.id);
+                    toast(`Удалено: ${a.name}`);
+                  }}
+                  style={{ marginLeft: 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
+                >
+                  <Icon name="close" style={{ width: 16, height: 16 }} />
+                </button>
+              ) : (
+                <span style={{ width: 16, marginLeft: 12 }} />
+              )}
             </div>
           ))}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderTop: "2px solid var(--hair)", marginTop: 6 }}>

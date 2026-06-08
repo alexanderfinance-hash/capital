@@ -11,6 +11,8 @@ export interface Asset {
   name: string;
   value: number;
   delta: number | null;
+  amount?: number | null; // token quantity (crypto)
+  symbol?: string | null; // coin ticker (crypto)
   src: DataSource;
   bucket: AssetBucket;
 }
@@ -30,6 +32,7 @@ export interface ExpenseCat {
 export interface ExpenseMonth {
   m: string;
   v: number;
+  period?: string; // "YYYY-MM"
 }
 export interface CoinAlloc {
   t: string;
@@ -52,6 +55,7 @@ export interface PersonalStore {
   assets: Asset[];
   flows: { expenses: FlowExpenses; dividends: FlowDividends };
   expenseCats: ExpenseCat[];
+  expensesByPeriod: Record<string, ExpenseCat[]>;
   expenseMonths: ExpenseMonth[];
   coins: CoinAlloc[];
   dividendsList: Dividend[];
@@ -97,6 +101,7 @@ export interface PersonalData {
   assets: Asset[];
   flows: { expenses: FlowExpenses; dividends: FlowDividends };
   expenseCats: ExpenseCat[];
+  expensesByPeriod: Record<string, ExpenseCat[]>;
   expenseMonths: ExpenseMonth[];
   coins: CoinAlloc[];
   dividendsList: Dividend[];

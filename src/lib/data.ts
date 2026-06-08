@@ -24,6 +24,7 @@ function personalFallback(): PersonalData {
     assets: initialStore.assets.map((a) => ({ ...a })),
     flows: { expenses: { ...initialStore.flows.expenses }, dividends: { ...initialStore.flows.dividends } },
     expenseCats: initialStore.expenseCats.map((c) => ({ ...c })),
+    expensesByPeriod: { ...initialStore.expensesByPeriod },
     expenseMonths: initialStore.expenseMonths.map((m) => ({ ...m })),
     coins: initialStore.coins.map((c) => ({ ...c })),
     dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
@@ -43,18 +44,14 @@ function companyFallback(): CompanyData {
 
 export async function getPersonalData(): Promise<PersonalData> {
   try {
-    const [assetRows, dividendRows, monthRows, coinRows, sync, latestCat] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
       prisma.coinAllocation.findMany({ orderBy: { pct: "desc" } }),
       prisma.syncState.findUnique({ where: { source: "crypto" } }),
-      prisma.expenseCategory.findFirst({ orderBy: { period: "desc" } }),
+      prisma.expenseCategory.findMany({ orderBy: { value: "desc" } }),
     ]);
-    // Category breakdown for the most recent period only.
-    const catRows = latestCat
-      ? await prisma.expenseCategory.findMany({ where: { period: latestCat.period }, orderBy: { value: "desc" } })
-      : [];
 
     const assets: Asset[] = assetRows.map((a) => ({
       id: a.slug ?? a.id,
@@ -62,14 +59,24 @@ export async function getPersonalData(): Promise<PersonalData> {
       name: a.name,
       value: num(a.value),
       delta: a.delta === null ? null : num(a.delta),
+      amount: a.amount === null ? null : num(a.amount),
+      symbol: a.symbol ?? null,
       src: a.source as DataSource,
       bucket: a.bucket as AssetBucket,
     }));
 
-    const months = monthRows.map((m) => ({ m: m.label, v: num(m.value) }));
+    const months = monthRows.map((m) => ({ m: m.label, v: num(m.value), period: m.monthStart.toISOString().slice(0, 7) }));
     const lastV = months.length ? months[months.length - 1].v : 0;
     const prevV = months.length > 1 ? months[months.length - 2].v : lastV;
     const expensesDelta = prevV ? Math.round(((lastV - prevV) / prevV) * 100) : 0;
+
+    // Categories grouped by period (for clickable month bars).
+    const expensesByPeriod: Record<string, { name: string; value: number }[]> = {};
+    for (const c of allCats) {
+      (expensesByPeriod[c.period] ||= []).push({ name: c.name, value: num(c.value) });
+    }
+    const latestPeriod = months.length ? months[months.length - 1].period : "";
+    const expenseCats = expensesByPeriod[latestPeriod] || [];
 
     const dividendsList = dividendRows.map((d) => ({ date: dayMonthRu(d.paidAt), name: d.name, amount: num(d.amount) }));
     const dividendsTotal = dividendsList.reduce((s, d) => s + d.amount, 0);
@@ -77,7 +84,8 @@ export async function getPersonalData(): Promise<PersonalData> {
     return {
       assets,
       flows: { expenses: { value: lastV, delta: expensesDelta }, dividends: { value: dividendsTotal } },
-      expenseCats: catRows.map((c) => ({ name: c.name, value: num(c.value) })),
+      expenseCats,
+      expensesByPeriod,
       expenseMonths: months,
       coins: coinRows.map((c) => ({ t: c.ticker, pct: c.pct })),
       dividendsList,

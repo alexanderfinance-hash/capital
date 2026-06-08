@@ -38,21 +38,34 @@ const EVM_TOKENS: { symbol: string; contract: string; decimals: number }[] = [
   { symbol: "USDC", contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
 ];
 
+// Several public RPCs; the first that answers wins. Override/prepend via EVM_RPC_URL.
+const EVM_RPCS = [
+  process.env.EVM_RPC_URL,
+  "https://ethereum-rpc.publicnode.com",
+  "https://rpc.ankr.com/eth",
+  "https://eth.llamarpc.com",
+  "https://cloudflare-eth.com",
+  "https://1rpc.io/eth",
+].filter(Boolean) as string[];
+
 async function rpc(method: string, params: unknown[]): Promise<string | null> {
-  const url = process.env.EVM_RPC_URL || "https://eth.llamarpc.com";
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      signal: signal(),
-    });
-    if (!res.ok) return null;
-    const j: any = await res.json();
-    return j?.result ?? null;
-  } catch {
-    return null;
+  for (const url of EVM_RPCS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: signal(),
+      });
+      if (!res.ok) continue;
+      const j: any = await res.json();
+      if (j?.error) continue;
+      if (j?.result != null) return j.result;
+    } catch {
+      /* try next endpoint */
+    }
   }
+  return null;
 }
 
 export async function fetchEvm(address: string): Promise<Holding[]> {

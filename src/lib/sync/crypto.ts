@@ -1,6 +1,7 @@
-/* Sync personal crypto: read wallet addresses from DB, fetch on-chain balances,
- * price them (CMC), and write per-coin Assets + CoinAllocation + a capital
- * snapshot. Providers are injectable for testing; defaults hit live APIs. */
+/* Sync crypto from wallet addresses in the DB:
+ *  - personal: aggregate by coin → per-coin Assets (with amount) + CoinAllocation
+ *  - company:  per-wallet USDT-TRC20 balance → Wallet.balanceUsd
+ * Prices via CMC. Providers are injectable for testing; defaults hit live APIs. */
 import "server-only";
 import { prisma } from "../prisma";
 import { defaultProviders, type CryptoProviders, type Holding } from "../crypto/providers";
@@ -18,54 +19,65 @@ export interface CryptoSyncResult {
   coins: { symbol: string; amount: number; usd: number }[];
   totalUsd: number;
   pricedSymbols: string[];
+  wallets: { address: string; chain: string; scope: string; holdings: Holding[]; usd: number }[];
 }
 
 export async function syncCrypto(providers: CryptoProviders = defaultProviders): Promise<CryptoSyncResult> {
-  const wallets = await prisma.wallet.findMany({ where: { scope: "personal" } });
+  const wallets = await prisma.wallet.findMany();
 
   // 1) Fetch holdings per wallet.
-  const perWalletUsdInputs: { id: string; holdings: Holding[] }[] = [];
-  const bySymbol = new Map<string, number>(); // symbol -> amount
+  const fetched: { id: string; scope: string; chain: string; address: string; holdings: Holding[] }[] = [];
+  const personalBySymbol = new Map<string, number>();
+  const allSymbols = new Set<string>();
   for (const w of wallets) {
     const fetcher = providers[w.chain as keyof CryptoProviders] as ((a: string) => Promise<Holding[]>) | undefined;
     const holdings = typeof fetcher === "function" ? await fetcher(w.address) : [];
-    perWalletUsdInputs.push({ id: w.id, holdings });
-    for (const h of holdings) bySymbol.set(h.symbol, (bySymbol.get(h.symbol) || 0) + h.amount);
+    fetched.push({ id: w.id, scope: w.scope, chain: w.chain, address: w.address, holdings });
+    for (const h of holdings) {
+      allSymbols.add(h.symbol);
+      if (w.scope === "personal") personalBySymbol.set(h.symbol, (personalBySymbol.get(h.symbol) || 0) + h.amount);
+    }
   }
 
-  // 2) Prices.
-  const symbols = [...bySymbol.keys()];
+  // 2) Prices for everything we found.
+  const symbols = [...allSymbols];
   const prices = symbols.length ? await providers.prices(symbols) : new Map();
+  const usdOf = (h: Holding) => h.amount * (prices.get(h.symbol)?.usd || 0);
 
-  const usdOfHolding = (h: Holding) => h.amount * (prices.get(h.symbol)?.usd || 0);
-
-  // 3) Per-coin USD aggregates.
-  const coins = symbols
+  // 3) Personal per-coin aggregates.
+  const coins = [...personalBySymbol.keys()]
     .map((symbol) => {
-      const amount = bySymbol.get(symbol) || 0;
-      const usd = amount * (prices.get(symbol)?.usd || 0);
-      return { symbol, amount, usd };
+      const amount = personalBySymbol.get(symbol) || 0;
+      return { symbol, amount, usd: amount * (prices.get(symbol)?.usd || 0) };
     })
     .filter((c) => c.usd > 0)
     .sort((a, b) => b.usd - a.usd);
   const totalCrypto = coins.reduce((s, c) => s + c.usd, 0);
 
-  // Safety: if nothing was fetched/priced (e.g. network blocked), keep existing
-  // data instead of wiping it.
-  if (coins.length === 0) {
-    return { coins: [], totalUsd: 0, pricedSymbols: [...prices.keys()] };
+  const walletsDebug = fetched.map((f) => ({
+    address: f.address,
+    chain: f.chain,
+    scope: f.scope,
+    holdings: f.holdings,
+    usd: f.holdings.reduce((s, h) => s + usdOf(h), 0),
+  }));
+
+  // Safety: nothing fetched/priced (e.g. network blocked) → keep existing data.
+  if (symbols.length === 0 || prices.size === 0) {
+    return { coins: [], totalUsd: 0, pricedSymbols: [...prices.keys()], wallets: walletsDebug };
   }
 
   // 4) Persist.
   await prisma.$transaction(async (tx) => {
-    // per-wallet balances
-    for (const w of perWalletUsdInputs) {
-      const usd = w.holdings.reduce((s, h) => s + usdOfHolding(h), 0);
-      const native = w.holdings[0]?.amount ?? 0;
-      await tx.wallet.update({ where: { id: w.id }, data: { balance: native, balanceUsd: usd, lastSyncedAt: new Date() } });
+    // per-wallet balances (both contours)
+    for (const f of fetched) {
+      const usd = f.holdings.reduce((s, h) => s + usdOf(h), 0);
+      // native amount = first holding of the chain's native or the largest stable
+      const native = f.holdings[0]?.amount ?? 0;
+      await tx.wallet.update({ where: { id: f.id }, data: { balance: native, balanceUsd: usd, lastSyncedAt: new Date() } });
     }
 
-    // per-coin synced assets (replace previous synced crypto assets)
+    // personal per-coin synced assets (replace previous synced crypto assets)
     await tx.asset.deleteMany({ where: { source: "sync", bucket: "crypto" } });
     for (const c of coins) {
       const meta = COIN_META[c.symbol] || { name: c.symbol, icon: "coins" };
@@ -75,6 +87,8 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
           icon: meta.icon,
           name: meta.name,
           value: Math.round(c.usd),
+          amount: c.amount,
+          symbol: c.symbol,
           delta: Math.round((prices.get(c.symbol)?.change24h || 0) * 10) / 10,
           source: "sync",
           bucket: "crypto",
@@ -93,6 +107,15 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     const personalTotal = allAssets.reduce((s, a) => s + Number(a.value), 0);
     await tx.capitalSnapshot.create({ data: { scope: "personal", value: personalTotal } });
 
+    // company snapshot (wallets + agencies)
+    const companyWallets = await tx.wallet.findMany({ where: { scope: "company" } });
+    const agencies = await tx.agency.findMany();
+    const companyTotal =
+      companyWallets.reduce((s, w) => s + Number(w.balanceUsd), 0) + agencies.reduce((s, a) => s + Number(a.balance), 0);
+    if (companyWallets.length || agencies.length) {
+      await tx.capitalSnapshot.create({ data: { scope: "company", value: companyTotal } });
+    }
+
     await tx.syncState.upsert({
       where: { source: "crypto" },
       update: { lastSyncedAt: new Date(), ok: true },
@@ -100,5 +123,5 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     });
   });
 
-  return { coins, totalUsd: Math.round(totalCrypto), pricedSymbols: [...prices.keys()] };
+  return { coins, totalUsd: Math.round(totalCrypto), pricedSymbols: [...prices.keys()], wallets: walletsDebug };
 }
