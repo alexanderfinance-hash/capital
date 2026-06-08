@@ -64,5 +64,8 @@ docker compose -f docker-compose.yml -f "$OVERLAY" up -d --build
 say "Готово. Контейнеры:"
 docker compose -f docker-compose.yml -f "$OVERLAY" ps
 say "Откройте: ${URL}"
-[ -z "$DOMAIN_VAL" ] && warn "Браузер один раз покажет предупреждение о сертификате — нажмите «Дополнительно» → «Перейти». Это нормально для входа по IP."
+if [ -z "$DOMAIN_VAL" ]; then
+  warn "Браузер один раз покажет предупреждение о сертификате — нажмите «Дополнительно» → «Перейти». Это нормально для входа по IP."
+fi
+exit 0
 
