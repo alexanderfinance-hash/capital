@@ -40,7 +40,10 @@ async function main() {
       "TTPKT5LeS26Z71AL9vCUCzBnx3RomZ5uiz",
       "TCiDRvChzNv9EDmPYeStWg2v7J5HUZwvgb",
     ] },
-    { chain: "TON", addrs: ["UQA8iSpC1heDwyQK2H-0ALJ-zZqdqBPVi7sV9uMv55pybi-T"] },
+    { chain: "TON", addrs: [
+      "UQA8iSpC1heDwyQK2H-0ALJ-zZqdqBPVi7sV9uMv55pybi-T",
+      "UQBZZbHNNOe832nuXMalQwlRtvj_bcD7nIYHO7lwFbNEmALt",
+    ] },
   ];
   for (const grp of PERSONAL_WALLETS) {
     for (let i = 0; i < grp.addrs.length; i++) {

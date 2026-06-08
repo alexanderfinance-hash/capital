@@ -58,6 +58,14 @@ export interface CryptoWalletHolding {
   amount: number;
   usd: number;
 }
+export interface PersonalWalletRow {
+  id: string;
+  chain: string;
+  label: string;
+  address: string;
+  balanceUsd: number;
+  synced: string;
+}
 export interface SubCat {
   name: string;
   value: number;
@@ -120,6 +128,7 @@ export interface PersonalData {
   expenseMonths: ExpenseMonth[];
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
+  personalWallets: PersonalWalletRow[];
   dividendsList: Dividend[];
   synced: string;
 }

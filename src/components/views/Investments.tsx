@@ -7,11 +7,15 @@ import { fmt, fmtAmount } from "@/lib/format";
 import { LineChart, Chip, Badge } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow } from "../ui";
+import { AddPersonalWalletModal } from "../AddPersonalWalletModal";
+
+const CHAIN_LABEL: Record<string, string> = { BTC: "Bitcoin", ETH: "Ethereum", TRX: "Tron", TON: "TON" };
 
 export default function Investments() {
-  const { store, refreshPersonal, personalSyncing } = useApp();
+  const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast } = useApp();
   const [period, setPeriod] = useState("6М");
   const [openSym, setOpenSym] = useState<string | null>(null);
+  const [walletModal, setWalletModal] = useState(false);
   const c = CHARTS[period];
   const cr = store.assets.filter((a) => a.bucket === "crypto");
   const crTotal = cr.reduce((s, a) => s + a.value, 0);
@@ -129,6 +133,42 @@ export default function Investments() {
           );
         })}
       </div>
+
+      <div className="card" style={{ padding: "8px 22px", marginTop: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 8px" }}>
+          <span className="k">Отслеживаемые адреса</span>
+          <button className="btn primary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setWalletModal(true)}>
+            + Добавить адрес
+          </button>
+        </div>
+        {personalWallets.length === 0 && (
+          <div className="h-sub" style={{ padding: "8px 0 16px" }}>Адресов нет. Нажмите «+ Добавить адрес» (укажите сеть и адрес — баланс подтянется сразу).</div>
+        )}
+        {personalWallets.map((w) => (
+          <div className="mlist-row" key={w.id}>
+            <span className="badge" style={{ flex: "none" }}>{CHAIN_LABEL[w.chain] || w.chain}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{w.label}</div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {w.address}
+              </div>
+            </div>
+            <div style={{ textAlign: "right", flex: "none" }}>
+              <div className="mono" style={{ fontSize: 13, fontWeight: 500 }}>{fmt(w.balanceUsd)}</div>
+              <div style={{ fontSize: 10, color: "var(--faint)" }}>{w.synced}</div>
+            </div>
+            <button
+              title="Удалить адрес"
+              onClick={() => { deletePersonalWallet(w.id); toast(`Адрес удалён: ${w.label}`); }}
+              style={{ marginLeft: 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
+            >
+              <Icon name="close" style={{ width: 16, height: 16 }} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {walletModal && <AddPersonalWalletModal onClose={() => setWalletModal(false)} />}
     </>
   );
 }

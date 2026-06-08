@@ -29,6 +29,7 @@ function personalFallback(): PersonalData {
     expenseMonths: initialStore.expenseMonths.map((m) => ({ ...m })),
     coins: initialStore.coins.map((c) => ({ ...c })),
     cryptoWallets: [],
+    personalWallets: [],
     dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
     synced: "Обновлено только что",
   };
@@ -97,6 +98,15 @@ export async function getPersonalData(): Promise<PersonalData> {
       }
     }
 
+    const personalWallets = personalWalletRows.map((w) => ({
+      id: w.slug ?? w.id,
+      chain: w.chain as string,
+      label: w.label,
+      address: w.address,
+      balanceUsd: num(w.balanceUsd),
+      synced: relativeRu(w.lastSyncedAt),
+    }));
+
     const dividendsList = dividendRows.map((d) => ({ date: dayMonthRu(d.paidAt), name: d.name, amount: num(d.amount) }));
     const dividendsTotal = dividendsList.reduce((s, d) => s + d.amount, 0);
 
@@ -109,6 +119,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       expenseMonths: months,
       coins: coinRows.map((c) => ({ t: c.ticker, pct: c.pct })),
       cryptoWallets,
+      personalWallets,
       dividendsList,
       synced: `Обновлено ${relativeRu(sync?.lastSyncedAt ?? null)}`,
     };
