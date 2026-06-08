@@ -1,0 +1,18 @@
+# Overlay for access by IP with self-signed HTTPS (no domain required).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ip.yml up -d --build
+services:
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile.ip:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

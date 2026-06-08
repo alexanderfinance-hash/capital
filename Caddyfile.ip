@@ -1,0 +1,11 @@
+# HTTPS by IP with a self-signed (internal CA) certificate — no domain needed.
+# Browser shows a one-time warning; click "Advanced → proceed".
+{
+	auto_https disable_redirects
+}
+
+:443 {
+	tls internal
+	encode zstd gzip
+	reverse_proxy app:3000
+}

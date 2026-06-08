@@ -32,15 +32,29 @@ if ! grep -q '^CRON_SECRET=' .env || grep -q 'change-me' <(grep '^CRON_SECRET=' 
   sed -i '/^CRON_SECRET=/d' .env; echo "CRON_SECRET=\"$(gen)\"" >> .env; say "Сгенерирован CRON_SECRET"
 fi
 
-# 4. Sanity checks
-grep -q '^DOMAIN=' .env || { warn "В .env нет DOMAIN — добавьте строку DOMAIN=\"ваш.домен\""; exit 1; }
+# 4. Checks
 [ -f secrets/google-service-account.json ] || warn "Нет secrets/google-service-account.json — расходы из Sheets не будут синхронизироваться, пока не добавите ключ."
 
+# Read DOMAIN (optional). If empty → self-signed HTTPS by IP.
+DOMAIN_VAL=$(grep '^DOMAIN=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs || true)
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+
+if [ -n "$DOMAIN_VAL" ]; then
+  say "Режим: домен $DOMAIN_VAL (Let's Encrypt, доверенный HTTPS)."
+  OVERLAY="docker-compose.prod.yml"
+  URL="https://$DOMAIN_VAL"
+else
+  say "DOMAIN не задан → режим: HTTPS по IP с самоподписанным сертификатом."
+  OVERLAY="docker-compose.ip.yml"
+  URL="https://${SERVER_IP}"
+fi
+
 # 5. Build & start
-say "Сборка и запуск (app + db + worker + caddy с авто-HTTPS)..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+say "Сборка и запуск (app + db + worker + caddy)..."
+docker compose -f docker-compose.yml -f "$OVERLAY" up -d --build
 
 say "Готово. Контейнеры:"
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-DOMAIN_VAL=$(grep '^DOMAIN=' .env | cut -d= -f2- | tr -d '"')
-say "Откройте https://${DOMAIN_VAL} (после того как DNS A-запись указывает на этот сервер и сертификат выпущен)."
+docker compose -f docker-compose.yml -f "$OVERLAY" ps
+say "Откройте: ${URL}"
+[ -z "$DOMAIN_VAL" ] && warn "Браузер один раз покажет предупреждение о сертификате — нажмите «Дополнительно» → «Перейти». Это нормально для входа по IP."
+
