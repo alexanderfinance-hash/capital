@@ -25,9 +25,10 @@ jobs:
               v=$(grep -E "^${k}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)
               if [ -n "$v" ]; then echo "$k: задан"; else echo "$k: НЕ задан / пуст"; fi
             done
-            echo "=== контейнер worker: видит ли TRONGRID_API_KEY ==="
-            if docker exec capital-worker-1 sh -c '[ -n "$TRONGRID_API_KEY" ]' 2>/dev/null; then
-              echo "worker: TRONGRID_API_KEY задан"
+            # Реальный запрос в TronGrid делает контейнер app (worker лишь дёргает его API).
+            echo "=== контейнер app: видит ли TRONGRID_API_KEY ==="
+            if docker exec capital-app-1 sh -c '[ -n "$TRONGRID_API_KEY" ]' 2>/dev/null; then
+              echo "app: TRONGRID_API_KEY задан"
             else
-              echo "worker: TRONGRID_API_KEY НЕ задан (или контейнер недоступен)"
+              echo "app: TRONGRID_API_KEY НЕ задан (или контейнер недоступен)"
             fi
