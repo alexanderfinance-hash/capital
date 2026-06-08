@@ -90,11 +90,11 @@ export async function getPersonalData(): Promise<PersonalData> {
     }
 
     // Per-wallet crypto breakdown (for the expandable coin list).
-    const cryptoWallets: { symbol: string; label: string; address: string; amount: number; usd: number }[] = [];
+    const cryptoWallets: { symbol: string; chain: string; label: string; address: string; amount: number; usd: number }[] = [];
     for (const w of personalWalletRows) {
       const hs = Array.isArray(w.holdingsJson) ? (w.holdingsJson as any[]) : [];
       for (const h of hs) {
-        if (h && h.symbol) cryptoWallets.push({ symbol: h.symbol, label: w.label, address: w.address, amount: Number(h.amount) || 0, usd: Number(h.usd) || 0 });
+        if (h && h.symbol) cryptoWallets.push({ symbol: h.symbol, chain: w.chain as string, label: w.label, address: w.address, amount: Number(h.amount) || 0, usd: Number(h.usd) || 0 });
       }
     }
 
@@ -105,6 +105,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       address: w.address,
       balanceUsd: num(w.balanceUsd),
       synced: relativeRu(w.lastSyncedAt),
+      staleDays: w.lastSyncedAt ? daysAgoRu(w.lastSyncedAt).staleDays : -1,
     }));
 
     const dividendsList = dividendRows.map((d) => ({ date: dayMonthRu(d.paidAt), name: d.name, amount: num(d.amount) }));
@@ -146,6 +147,7 @@ export async function getCompanyData(): Promise<CompanyData> {
       type: (w.kind ?? "main") as WalletType,
       group: (w.group ?? "dirty") as WalletGroup,
       synced: relativeRu(w.lastSyncedAt),
+      staleDays: w.lastSyncedAt ? daysAgoRu(w.lastSyncedAt).staleDays : -1,
     }));
 
     const agencies: Agency[] = agencyRows.map((a) => {

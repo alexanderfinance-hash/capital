@@ -53,6 +53,7 @@ export interface ChartSeries {
 
 export interface CryptoWalletHolding {
   symbol: string;
+  chain: string;
   label: string;
   address: string;
   amount: number;
@@ -65,6 +66,7 @@ export interface PersonalWalletRow {
   address: string;
   balanceUsd: number;
   synced: string;
+  staleDays?: number; // -1 = ни разу не синхронизирован; отсутствует = свежо (моки)
 }
 export interface SubCat {
   name: string;
@@ -95,6 +97,7 @@ export interface Wallet {
   type: WalletType;
   group: WalletGroup;
   synced: string;
+  staleDays?: number; // -1 = ни разу не синхронизирован; отсутствует = свежо (моки)
 }
 
 export interface Agency {

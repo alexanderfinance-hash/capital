@@ -7,6 +7,7 @@ import { Chip, CompanyChart } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { AddWalletModal } from "../AddWalletModal";
 import { AddAgencyModal } from "../AddAgencyModal";
+import { SyncStamp } from "../ui";
 import type { Agency, Reserves, Wallet } from "@/lib/types";
 
 const money = fmt;
@@ -101,7 +102,7 @@ function WalletGroup({ groupKey, tone, title, hint, wallets, open, onToggle, onD
                 <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>
                   {w.addr.slice(0, 6)}…{w.addr.slice(-4)}
                 </span>
-                <span style={{ fontSize: 10, color: "var(--faint)" }}>{w.synced}</span>
+                <SyncStamp synced={w.synced} staleDays={w.staleDays} />
               </div>
               <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
                 <span className="mono" style={{ fontSize: 13, fontWeight: 500, textAlign: "right" }}>

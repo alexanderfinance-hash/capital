@@ -6,7 +6,7 @@ import { CHARTS, PERIODS } from "@/lib/mockData";
 import { fmt, fmtAmount } from "@/lib/format";
 import { LineChart, Chip, Badge } from "@/lib/chart";
 import { Icon } from "../Icon";
-import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow } from "../ui";
+import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow, SyncStamp } from "../ui";
 import { AddPersonalWalletModal } from "../AddPersonalWalletModal";
 
 const CHAIN_LABEL: Record<string, string> = { BTC: "Bitcoin", ETH: "Ethereum", TRX: "Tron", TON: "TON" };
@@ -112,8 +112,11 @@ export default function Investments() {
                   {subWallets.map((w, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: "1px solid var(--hair-2)" }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 500 }}>{w.label}</div>
-                        <div className="mono" style={{ fontSize: 11, color: "var(--faint)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span className="badge" style={{ flex: "none", padding: "1px 6px", fontSize: 8.5 }}>{CHAIN_LABEL[w.chain] || w.chain}</span>
+                          <span style={{ fontSize: 12.5, fontWeight: 500 }}>{w.label}</span>
+                        </div>
+                        <div className="mono" style={{ fontSize: 11, color: "var(--faint)", marginTop: 2 }}>
                           {w.address.length > 16 ? `${w.address.slice(0, 8)}…${w.address.slice(-6)}` : w.address}
                         </div>
                       </div>
@@ -155,7 +158,7 @@ export default function Investments() {
             </div>
             <div style={{ textAlign: "right", flex: "none" }}>
               <div className="mono" style={{ fontSize: 13, fontWeight: 500 }}>{fmt(w.balanceUsd)}</div>
-              <div style={{ fontSize: 10, color: "var(--faint)" }}>{w.synced}</div>
+              <SyncStamp synced={w.synced} staleDays={w.staleDays} />
             </div>
             <button
               title="Удалить адрес"

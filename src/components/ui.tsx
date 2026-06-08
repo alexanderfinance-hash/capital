@@ -49,6 +49,22 @@ export function PeriodSeg({ periods, active, onChange }: { periods: readonly str
   );
 }
 
+/* Freshness stamp for synced data (PRD §7): plain time when fresh, a soft
+ * "устарело" badge when stale (>= 1 day), "ожидает обновления" when never synced. */
+export function SyncStamp({ synced, staleDays }: { synced: string; staleDays?: number }) {
+  if (staleDays === -1) {
+    return <span style={{ fontSize: 10, color: "var(--muted)" }}>ожидает обновления</span>;
+  }
+  if (staleDays != null && staleDays >= 1) {
+    return (
+      <span className="badge" style={{ color: "var(--neg)", borderColor: "#e7c9c5", padding: "1px 6px", fontSize: 8.5 }} title="Данные давно не обновлялись">
+        {synced}
+      </span>
+    );
+  }
+  return <span style={{ fontSize: 10, color: "var(--faint)" }}>{synced}</span>;
+}
+
 export function BarRow({ label, val, frac, color }: { label: string; val: string; frac: number; color?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0" }}>
