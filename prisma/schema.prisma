@@ -28,6 +28,7 @@ enum AssetBucket {
 enum Chain {
   BTC
   ETH
+  BSC
   TRX
   TON
 }
@@ -78,8 +79,9 @@ model Asset {
   updatedAt DateTime    @updatedAt
 }
 
-/// Blockchain addresses to sync (both contours). Company USDT-TRC20 wallets
-/// carry group (clean/dirty) and kind (main/small); personal crypto does not.
+/// Blockchain addresses to sync (both contours). Company USDT wallets live on
+/// Tron (TRC20), Ethereum (ERC20) or BNB Smart Chain (BEP20) and carry group
+/// (clean/dirty) and kind (main/small); personal crypto does not.
 model Wallet {
   id           String       @id @default(cuid())
   slug         String?      @unique // stable id for seeded rows (e.g. "w_clean_1")

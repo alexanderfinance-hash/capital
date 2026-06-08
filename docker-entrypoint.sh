@@ -13,5 +13,10 @@ else
   echo "→ Database already populated — skipping seed."
 fi
 
+# Idempotent: upsert the company USDT wallet list on every boot (runs even when
+# the seed is skipped). Never duplicates rows or wipes synced balances.
+echo "→ Importing company wallets (idempotent)..."
+npx tsx prisma/import-company-wallets.ts || echo "company wallet import skipped/failed"
+
 echo "→ Starting app..."
 exec "$@"

@@ -9,6 +9,7 @@ import { defaultProviders, type CryptoProviders, type Holding } from "../crypto/
 const COIN_META: Record<string, { name: string; icon: string }> = {
   BTC: { name: "Bitcoin", icon: "coins" },
   ETH: { name: "Ethereum", icon: "coins" },
+  BNB: { name: "BNB", icon: "coins" },
   TRX: { name: "Tron", icon: "coins" },
   TON: { name: "Toncoin", icon: "coins" },
   USDT: { name: "USDT", icon: "wallet" },
