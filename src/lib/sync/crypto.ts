@@ -37,7 +37,7 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
 
   // 1) Fetch holdings per wallet. On a fetch failure we fall back to the last
   //    known holdings and mark the wallet `stale` so persistence skips it.
-  const fetched: { id: string; scope: string; chain: string; address: string; holdings: Holding[]; stale: boolean }[] = [];
+  const fetched: { id: string; scope: string; token: string; chain: string; address: string; holdings: Holding[]; stale: boolean }[] = [];
   const personalBySymbol = new Map<string, number>();
   const allSymbols = new Set<string>();
   for (const w of wallets) {
@@ -55,7 +55,7 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
         stale = true;
       }
     }
-    fetched.push({ id: w.id, scope: w.scope, chain: w.chain, address: w.address, holdings, stale });
+    fetched.push({ id: w.id, scope: w.scope, token: w.token, chain: w.chain, address: w.address, holdings, stale });
     for (const h of holdings) {
       allSymbols.add(h.symbol);
       if (w.scope === "personal") personalBySymbol.set(h.symbol, (personalBySymbol.get(h.symbol) || 0) + h.amount);
@@ -101,9 +101,14 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     // Stale wallets (live fetch failed) keep their previous balance and lastSyncedAt.
     for (const f of fetched) {
       if (f.stale) continue;
-      const usd = f.holdings.reduce((s, h) => s + usdOf(h), 0);
-      const native = f.holdings[0]?.amount ?? 0;
-      const holdingsJson = f.holdings.map((h) => ({ symbol: h.symbol, amount: h.amount, usd: usdOf(h) }));
+      // Company wallets track a single stablecoin (USDT) — count ONLY that token,
+      // never the native gas coin (BNB/TRX/ETH) or other tokens, so the balance
+      // reflects real USDT and isn't inflated by gas dust. Personal wallets keep
+      // their full multi-coin holdings.
+      const counted = f.scope === "company" ? f.holdings.filter((h) => h.symbol === f.token) : f.holdings;
+      const usd = counted.reduce((s, h) => s + usdOf(h), 0);
+      const native = counted[0]?.amount ?? 0;
+      const holdingsJson = counted.map((h) => ({ symbol: h.symbol, amount: h.amount, usd: usdOf(h) }));
       await tx.wallet.update({ where: { id: f.id }, data: { balance: native, balanceUsd: usd, holdingsJson, lastSyncedAt: new Date() } });
     }
 
