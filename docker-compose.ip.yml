@@ -6,12 +6,11 @@ services:
     restart: unless-stopped
     depends_on:
       - app
-    environment:
-      SITE_ADDR: "https://${SERVER_IP}"
     ports:
       - "443:443"
     volumes:
       - ./Caddyfile.ip:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
       - caddy_data:/data
       - caddy_config:/config
 

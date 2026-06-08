@@ -33,3 +33,6 @@ yarn-error.log*
 # secrets (never commit)
 /secrets/
 google-service-account*.json
+
+# self-signed certs (IP mode)
+/certs/

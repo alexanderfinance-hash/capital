@@ -48,6 +48,13 @@ else
   say "DOMAIN не задан → режим: HTTPS по IP с самоподписанным сертификатом."
   OVERLAY="docker-compose.ip.yml"
   URL="https://${SERVER_IP}"
+  mkdir -p certs
+  if [ ! -f certs/cert.pem ] || [ ! -f certs/key.pem ]; then
+    say "Генерирую самоподписанный сертификат для ${SERVER_IP}..."
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+      -keyout certs/key.pem -out certs/cert.pem \
+      -subj "/CN=${SERVER_IP}" -addext "subjectAltName=IP:${SERVER_IP}"
+  fi
 fi
 
 # 5. Build & start
