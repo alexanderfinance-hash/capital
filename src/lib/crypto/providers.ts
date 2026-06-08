@@ -32,14 +32,72 @@ export async function fetchBtc(address: string): Promise<Holding[]> {
   return sats > 0 ? [{ symbol: "BTC", amount: sats / 1e8 }] : [];
 }
 
-/* ---------- EVM (JSON-RPC): native ETH + USDT/USDC via balanceOf ---------- */
-const EVM_TOKENS: { symbol: string; contract: string; decimals: number }[] = [
-  { symbol: "USDT", contract: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
-  { symbol: "USDC", contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
-];
+/* ---------- EVM (JSON-RPC): native coin + USDT/USDC via balanceOf ----------
+ * Generic over the network: a fetcher is built from an RPC list, the native
+ * coin symbol and the stablecoin contracts on that chain. Ethereum and BNB
+ * Smart Chain (BSC) share this exact code path — only RPCs/contracts/decimals
+ * differ (BEP20 stablecoins use 18 decimals, Ethereum's use 6). */
+interface EvmToken {
+  symbol: string;
+  contract: string;
+  decimals: number;
+}
 
-// Several public RPCs; the first that answers wins. Override/prepend via EVM_RPC_URL.
-const EVM_RPCS = [
+// Build a JSON-RPC caller over a list of endpoints; the first that answers wins.
+// Throws if every endpoint is unreachable/errors, so a transient outage is not
+// mistaken for an empty balance (PRD §7).
+function makeRpc(rpcs: string[]) {
+  return async function rpc(method: string, params: unknown[]): Promise<string> {
+    let lastErr: unknown = null;
+    for (const url of rpcs) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          signal: signal(),
+        });
+        if (!res.ok) {
+          lastErr = new Error("evm " + res.status);
+          continue;
+        }
+        const j: any = await res.json();
+        if (j?.error) {
+          lastErr = new Error("evm rpc error");
+          continue;
+        }
+        if (j?.result != null) return j.result;
+        lastErr = new Error("evm empty result");
+      } catch (e) {
+        lastErr = e; // try next endpoint
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error("evm rpc failed");
+  };
+}
+
+// One EVM balance fetcher: native coin + each configured stablecoin via balanceOf.
+function makeEvmFetcher(rpcs: string[], nativeSymbol: string, tokens: EvmToken[]) {
+  const rpc = makeRpc(rpcs);
+  return async function (address: string): Promise<Holding[]> {
+    const out: Holding[] = [];
+    const wei = await rpc("eth_getBalance", [address, "latest"]);
+    const native = Number(BigInt(wei)) / 1e18;
+    if (native > 0) out.push({ symbol: nativeSymbol, amount: native });
+    for (const t of tokens) {
+      const data = "0x70a08231" + address.slice(2).toLowerCase().padStart(64, "0");
+      const hex = await rpc("eth_call", [{ to: t.contract, data }, "latest"]);
+      if (hex && hex !== "0x") {
+        const amt = Number(BigInt(hex)) / 10 ** t.decimals;
+        if (amt > 0) out.push({ symbol: t.symbol, amount: amt });
+      }
+    }
+    return out;
+  };
+}
+
+// Ethereum mainnet. Several public RPCs; override/prepend via EVM_RPC_URL.
+const ETH_RPCS = [
   process.env.EVM_RPC_URL,
   "https://ethereum-rpc.publicnode.com",
   "https://rpc.ankr.com/eth",
@@ -47,52 +105,26 @@ const EVM_RPCS = [
   "https://cloudflare-eth.com",
   "https://1rpc.io/eth",
 ].filter(Boolean) as string[];
+const ETH_TOKENS: EvmToken[] = [
+  { symbol: "USDT", contract: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
+  { symbol: "USDC", contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
+];
+export const fetchEvm = makeEvmFetcher(ETH_RPCS, "ETH", ETH_TOKENS);
 
-// Returns the RPC result string. Throws if every endpoint is unreachable/errors,
-// so a transient outage is not mistaken for an empty balance.
-async function rpc(method: string, params: unknown[]): Promise<string> {
-  let lastErr: unknown = null;
-  for (const url of EVM_RPCS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        signal: signal(),
-      });
-      if (!res.ok) {
-        lastErr = new Error("evm " + res.status);
-        continue;
-      }
-      const j: any = await res.json();
-      if (j?.error) {
-        lastErr = new Error("evm rpc error");
-        continue;
-      }
-      if (j?.result != null) return j.result;
-      lastErr = new Error("evm empty result");
-    } catch (e) {
-      lastErr = e; // try next endpoint
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error("evm rpc failed");
-}
-
-export async function fetchEvm(address: string): Promise<Holding[]> {
-  const out: Holding[] = [];
-  const wei = await rpc("eth_getBalance", [address, "latest"]);
-  const eth = Number(BigInt(wei)) / 1e18;
-  if (eth > 0) out.push({ symbol: "ETH", amount: eth });
-  for (const t of EVM_TOKENS) {
-    const data = "0x70a08231" + address.slice(2).toLowerCase().padStart(64, "0");
-    const hex = await rpc("eth_call", [{ to: t.contract, data }, "latest"]);
-    if (hex && hex !== "0x") {
-      const amt = Number(BigInt(hex)) / 10 ** t.decimals;
-      if (amt > 0) out.push({ symbol: t.symbol, amount: amt });
-    }
-  }
-  return out;
-}
+// BNB Smart Chain (BSC). Public RPCs, no key needed; override/prepend via BSC_RPC_URL.
+// BEP20 USDT/USDC use 18 decimals (unlike Ethereum's 6).
+const BSC_RPCS = [
+  process.env.BSC_RPC_URL,
+  "https://bsc-rpc.publicnode.com",
+  "https://bsc-dataseed.bnbchain.org",
+  "https://bsc-dataseed1.binance.org",
+  "https://1rpc.io/bnb",
+].filter(Boolean) as string[];
+const BSC_TOKENS: EvmToken[] = [
+  { symbol: "USDT", contract: "0x55d398326f99059fF775485246999027B3197955", decimals: 18 },
+  { symbol: "USDC", contract: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", decimals: 18 },
+];
+export const fetchBsc = makeEvmFetcher(BSC_RPCS, "BNB", BSC_TOKENS);
 
 /* ---------- TRON (TronGrid): native TRX + USDT-TRC20 ---------- */
 const TRON_USDT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
@@ -209,6 +241,7 @@ export async function getPrices(symbols: string[]): Promise<Map<string, Price>> 
 export interface CryptoProviders {
   BTC: (a: string) => Promise<Holding[]>;
   ETH: (a: string) => Promise<Holding[]>;
+  BSC: (a: string) => Promise<Holding[]>;
   TRX: (a: string) => Promise<Holding[]>;
   TON: (a: string) => Promise<Holding[]>;
   prices: (s: string[]) => Promise<Map<string, Price>>;
@@ -217,6 +250,7 @@ export interface CryptoProviders {
 export const defaultProviders: CryptoProviders = {
   BTC: fetchBtc,
   ETH: fetchEvm,
+  BSC: fetchBsc,
   TRX: fetchTron,
   TON: fetchTon,
   prices: getPrices,

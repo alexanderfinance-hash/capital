@@ -36,7 +36,7 @@ interface AppState {
 
   /* company */
   wallets: Wallet[];
-  addCompanyWallet: (w: { address: string; label: string; group: "clean" | "dirty"; kind: "main" | "small" }) => void;
+  addCompanyWallet: (w: { address: string; label: string; group: "clean" | "dirty"; kind: "main" | "small"; chain?: "TRX" | "ETH" | "BSC" }) => void;
   deleteCompanyWallet: (id: string) => void;
   history: HistoryPoint[];
   reserves: Reserves;
@@ -169,7 +169,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   }, []);
 
   const addCompanyWallet = useCallback(
-    (w: { address: string; label: string; group: "clean" | "dirty"; kind: "main" | "small" }) => {
+    (w: { address: string; label: string; group: "clean" | "dirty"; kind: "main" | "small"; chain?: "TRX" | "ETH" | "BSC" }) => {
       const tempId = "tmp-" + Date.now();
       setWallets((prev) => [
         ...prev,

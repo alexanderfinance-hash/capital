@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { address?: string; label?: string; group?: string; kind?: string } = {};
+  let b: { address?: string; label?: string; group?: string; kind?: string; chain?: string } = {};
   try {
     b = await req.json();
   } catch {
@@ -18,12 +18,14 @@ export async function POST(req: Request) {
   if (!address) return NextResponse.json({ error: "no_address" }, { status: 400 });
   const group = b.group === "clean" ? "clean" : "dirty";
   const kind = b.kind === "small" ? "small" : "main";
+  // Company USDT wallets live on Tron (TRC20), Ethereum (ERC20) or BSC (BEP20).
+  const chain = b.chain === "ETH" ? "ETH" : b.chain === "BSC" ? "BSC" : "TRX";
 
   try {
     const w = await prisma.wallet.create({
       data: {
         scope: "company",
-        chain: "TRX",
+        chain,
         token: "USDT",
         address,
         label: (b.label || "").trim() || address.slice(0, 8),

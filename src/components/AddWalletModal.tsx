@@ -8,6 +8,7 @@ export function AddWalletModal({ onClose }: { onClose: () => void }) {
   const { addCompanyWallet } = useApp();
   const [address, setAddress] = useState("");
   const [label, setLabel] = useState("");
+  const [chain, setChain] = useState<"TRX" | "BSC" | "ETH">("TRX");
   const [group, setGroup] = useState<"clean" | "dirty">("dirty");
   const [kind, setKind] = useState<"main" | "small">("main");
   const [err, setErr] = useState(false);
@@ -29,7 +30,7 @@ export function AddWalletModal({ onClose }: { onClose: () => void }) {
       setErr(true);
       return;
     }
-    addCompanyWallet({ address: addr, label: label.trim(), group, kind });
+    addCompanyWallet({ address: addr, label: label.trim(), group, kind, chain });
     onClose();
   };
 
@@ -48,7 +49,7 @@ export function AddWalletModal({ onClose }: { onClose: () => void }) {
       <div className="modal ds">
         <div className="modal-head">
           <h3 className="h-title" style={{ fontSize: 17 }}>
-            Добавить кошелёк (USDT-TRC20)
+            Добавить кошелёк (USDT)
           </h3>
           <button className="iconbtn" onClick={onClose}>
             <Icon name="close" />
@@ -56,8 +57,12 @@ export function AddWalletModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="modal-body">
           <label className="fld">
-            <span className="k">Адрес кошелька (Tron)</span>
-            <input ref={ref} type="text" placeholder="T..." autoComplete="off" className={err ? "err" : ""} value={address} onChange={(e) => { setAddress(e.target.value); setErr(false); }} />
+            <span className="k">Сеть</span>
+            <Seg value={chain} opts={[{ v: "TRX", l: "Tron (TRC20)" }, { v: "BSC", l: "BSC (BEP20)" }, { v: "ETH", l: "Ethereum (ERC20)" }]} onChange={(v) => setChain(v as "TRX" | "BSC" | "ETH")} />
+          </label>
+          <label className="fld">
+            <span className="k">Адрес кошелька</span>
+            <input ref={ref} type="text" placeholder={chain === "TRX" ? "T..." : "0x..."} autoComplete="off" className={err ? "err" : ""} value={address} onChange={(e) => { setAddress(e.target.value); setErr(false); }} />
           </label>
           <label className="fld">
             <span className="k">Название</span>
