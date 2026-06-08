@@ -198,14 +198,14 @@ export function Donut({ assets }: { assets: Asset[] }) {
 }
 
 /* ===== Company chart — mirrors chartHTML(available) in dashboard-company.js ===== */
-export function CompanyChart({ history, available }: { history: HistoryPoint[]; available: number }) {
+export function CompanyChart({ history, current }: { history: HistoryPoint[]; current: number }) {
   // Need at least two points to draw a line; otherwise show a placeholder.
   if (history.length < 2) {
     return (
       <div>
-        <div className="k">Динамика вывода</div>
+        <div className="k">Остатки USDT на кошельках компании</div>
         <div className="h-sub" style={{ marginTop: 4 }}>
-          доступно к выводу
+          баланс кошельков · с 1 января
         </div>
         <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 12.5 }}>
           График появится, когда накопится история синхронизаций.
@@ -214,7 +214,8 @@ export function CompanyChart({ history, available }: { history: HistoryPoint[]; 
     );
   }
   const vals = history.map((h) => h.value);
-  vals[vals.length - 1] = available;
+  // Last point reflects the live wallet USDT total (the rest are stored snapshots).
+  vals[vals.length - 1] = current;
   const labels = history.map((h) => h.week);
   const W = 720,
     H = 240,
@@ -253,15 +254,15 @@ export function CompanyChart({ history, available }: { history: HistoryPoint[]; 
       );
   });
   const end = pts[pts.length - 1];
-  const delta = available - vals[0];
-  const pct = +((delta / vals[0]) * 100).toFixed(1);
+  const delta = current - vals[0];
+  const pct = vals[0] ? +((delta / vals[0]) * 100).toFixed(1) : 0;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
         <div>
-          <div className="k">Динамика вывода</div>
+          <div className="k">Остатки USDT на кошельках компании</div>
           <div className="h-sub" style={{ marginTop: 4 }}>
-            доступно к выводу · 12 недель
+            баланс кошельков · с 1 января
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
