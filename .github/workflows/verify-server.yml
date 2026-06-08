@@ -32,3 +32,9 @@ jobs:
             else
               echo "app: TRONGRID_API_KEY НЕ задан (или контейнер недоступен)"
             fi
+            # Автосинк выполняет контейнер worker (node-cron, крипта раз в 10 мин).
+            # Его логи показывают каждый запуск и HTTP-ответ синка (200 = успех).
+            echo "=== контейнер worker: статус (аптайм = крутится по расписанию) ==="
+            docker ps --filter "name=capital-worker-1" --format '{{.Names}}: {{.Status}}' || echo "worker: контейнер не найден"
+            echo "=== worker: последние строки автосинка ==="
+            docker logs --tail 25 capital-worker-1 2>&1 | tail -25 || echo "worker: логи недоступны"
