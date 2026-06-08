@@ -335,7 +335,7 @@ function ChartCard({ c }: { c: CompanyComputed }) {
   const { history } = useApp();
   return (
     <div className="card" style={{ padding: 24 }}>
-      <CompanyChart history={history} available={c.available} />
+      <CompanyChart history={history} current={c.walletsTotal} />
     </div>
   );
 }

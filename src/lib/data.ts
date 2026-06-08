@@ -135,7 +135,11 @@ export async function getCompanyData(): Promise<CompanyData> {
       prisma.wallet.findMany({ where: { scope: "company" }, orderBy: { balanceUsd: "desc" } }),
       prisma.agency.findMany({ orderBy: { balance: "desc" } }),
       prisma.reserve.findUnique({ where: { id: "default" } }),
-      prisma.capitalSnapshot.findMany({ where: { scope: "company" }, orderBy: { capturedAt: "asc" } }),
+      // Company wallet history is shown year-to-date — from Jan 1 of the current year.
+      prisma.capitalSnapshot.findMany({
+        where: { scope: "company", capturedAt: { gte: new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1)) } },
+        orderBy: { capturedAt: "asc" },
+      }),
       prisma.syncState.findUnique({ where: { source: "crypto" } }),
     ]);
 
