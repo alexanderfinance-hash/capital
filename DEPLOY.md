@@ -112,3 +112,57 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml down    # ост
   наружу открыты лишь 80/443 (Caddy, HTTPS).
 - Секреты (`.env`, `secrets/`) в git не попадают.
 - Рекомендуется включить файрвол: `ufw allow 22,80,443/tcp && ufw enable`.
+
+---
+
+## Авто-деплой (CI/CD)
+
+Чтобы больше не заходить на сервер вручную при каждом изменении кода: настроен
+GitHub Actions (`.github/workflows/deploy.yml`). После пуша в прод-ветку
+(`claude/dreamy-johnson-pUcCJ`) CI сам заходит на сервер по SSH и выполняет
+`git pull && ./deploy.sh`. Секреты приложения (`.env`, `secrets/`) при этом
+остаются на сервере — CI к ним не прикасается, ему нужен только SSH-доступ.
+
+### Настройка (один раз)
+
+**1. Создайте отдельный SSH-ключ для деплоя** (на своём компьютере или сервере):
+```bash
+ssh-keygen -t ed25519 -f deploy_key -N "" -C "github-actions-deploy"
+```
+Получатся два файла: `deploy_key` (приватный) и `deploy_key.pub` (публичный).
+
+**2. Разрешите этому ключу заходить на сервер** — добавьте публичный ключ в
+`~/.ssh/authorized_keys` на VPS:
+```bash
+cat deploy_key.pub | ssh root@IP_ВАШЕГО_СЕРВЕРА 'mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys'
+```
+
+**3. Заведите секреты в GitHub** — репозиторий → **Settings → Secrets and
+variables → Actions → New repository secret**:
+| Имя | Значение |
+|-----|----------|
+| `VPS_HOST` | IP или домен сервера |
+| `VPS_USER` | пользователь SSH (например, `root`) |
+| `VPS_SSH_KEY` | **полное содержимое приватного файла** `deploy_key` |
+
+**4. Включите деплой** — там же, вкладка **Variables → New repository variable**:
+| Имя | Значение |
+|-----|----------|
+| `DEPLOY_ENABLED` | `true` |
+
+Пока этой переменной нет, workflow тихо пропускается (не падает с ошибкой).
+
+### Как это работает дальше
+- Любой пуш в `claude/dreamy-johnson-pUcCJ` запускает деплой автоматически.
+- Можно запустить вручную: вкладка **Actions → Deploy to VPS → Run workflow**.
+- Прогресс/логи деплоя видны во вкладке **Actions**.
+
+### Предусловия на сервере
+- Репозиторий склонирован в `~/capital` (как в шаге 4 выше).
+- Сервер умеет делать `git pull` без ввода пароля. Если репозиторий приватный и
+  клонирован по HTTPS — настройте сохранение токена
+  (`git config --global credential.helper store` и один ручной `git pull`),
+  либо переключите remote на SSH-доступ к GitHub.
+- Нестандартный SSH-порт? Добавьте секрет `VPS_PORT` и строку
+  `port: ${{ secrets.VPS_PORT }}` в `deploy.yml`.
+
