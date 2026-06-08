@@ -2,18 +2,18 @@
 
 import { useState } from "react";
 import { useApp } from "@/lib/store";
-import { CHARTS, PERIODS } from "@/lib/mockData";
+import { PERIODS } from "@/lib/mockData";
 import { fmt } from "@/lib/format";
-import { LineChart, Chip, Donut } from "@/lib/chart";
+import { LineChart, Chip, Donut, ChartEmpty, seriesForPeriod } from "@/lib/chart";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg } from "../ui";
 import { CatCard, FlowCard, AddAssetCard } from "../cards";
 import { AddAssetModal } from "../AddAssetModal";
 
 export default function Overview() {
-  const { store, personalTotal, refreshPersonal, personalSyncing } = useApp();
+  const { store, personalTotal, refreshPersonal, personalSyncing, capitalHistory } = useApp();
   const [period, setPeriod] = useState("6М");
   const [modal, setModal] = useState(false);
-  const c = CHARTS[period];
+  const c = seriesForPeriod(capitalHistory, period);
 
   return (
     <>
@@ -38,12 +38,16 @@ export default function Overview() {
                 {fmt(personalTotal)}
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 4 }}>
-              <Chip d={c.d} />
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{c.a} за период</span>
-            </div>
+            {!c.empty && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 4 }}>
+                <Chip d={c.deltaPct} />
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  {(c.deltaAbs >= 0 ? "+" : "−") + fmt(Math.abs(c.deltaAbs))} за период
+                </span>
+              </div>
+            )}
           </div>
-          <LineChart vals={c.v} labels={c.l} />
+          {c.empty ? <ChartEmpty /> : <LineChart vals={c.vals} labels={c.labels} />}
         </div>
 
         <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column" }}>

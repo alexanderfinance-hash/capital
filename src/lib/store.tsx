@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { DEFAULT_RESERVES } from "./mockData";
-import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow } from "./types";
+import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow, SnapshotPoint } from "./types";
 
 export type CompanyLayout = "dash" | "calc" | "report";
 export interface OpenGroups {
@@ -24,6 +24,8 @@ interface AppState {
   /* personal */
   store: PersonalStore;
   personalTotal: number;
+  capitalHistory: SnapshotPoint[];
+  cryptoHistory: SnapshotPoint[];
   addAsset: (a: Omit<Asset, "id">) => void;
   addDividend: (d: Dividend) => void;
   deleteAsset: (id: string) => void;
@@ -97,6 +99,8 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const [personalSynced, setPersonalSynced] = useState(initial.personal.synced);
   const [personalSyncing, setPersonalSyncing] = useState(false);
   const [personalWallets, setPersonalWallets] = useState<PersonalWalletRow[]>(initial.personal.personalWallets.map((w) => ({ ...w })));
+  const [capitalHistory] = useState<SnapshotPoint[]>(initial.personal.capitalHistory.map((p) => ({ ...p })));
+  const [cryptoHistory] = useState<SnapshotPoint[]>(initial.personal.cryptoHistory.map((p) => ({ ...p })));
 
   const [reserves, setReserves] = useState<Reserves>(initial.company.reserves);
   const [agencies, setAgencies] = useState<Agency[]>(initial.company.agencies.map((a) => ({ ...a })));
@@ -287,6 +291,8 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const value: AppState = {
     store,
     personalTotal,
+    capitalHistory,
+    cryptoHistory,
     addAsset,
     addDividend,
     deleteAsset,

@@ -50,6 +50,7 @@ enum WalletKind {
 
 enum SnapshotScope {
   personal
+  crypto
   company
 }
 

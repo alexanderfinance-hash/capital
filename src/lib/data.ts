@@ -3,7 +3,7 @@
  * unreachable (so `npm run dev` works without Postgres). */
 import "server-only";
 import { prisma } from "./prisma";
-import { initialStore, WALLETS, AGENCIES, HISTORY, DEFAULT_RESERVES } from "./mockData";
+import { initialStore, WALLETS, AGENCIES, HISTORY, DEFAULT_RESERVES, CHARTS } from "./mockData";
 import { relativeRu, daysAgoRu, dayMonthRu } from "./time";
 import type {
   PersonalData,
@@ -15,9 +15,20 @@ import type {
   AssetBucket,
   WalletGroup,
   WalletType,
+  SnapshotPoint,
 } from "./types";
 
 const num = (v: unknown): number => Number(v as never);
+
+/** Build a fallback history series from a mock chart row (dev without DB only).
+ *  Spaces points one day apart ending today so period filtering still works. */
+function fallbackHistory(vals: number[]): SnapshotPoint[] {
+  const now = Date.now();
+  return vals.map((v, i) => {
+    const d = new Date(now - (vals.length - 1 - i) * 86400000);
+    return { t: d.toISOString(), label: dayMonthRu(d), value: v * 1000 };
+  });
+}
 
 function personalFallback(): PersonalData {
   return {
@@ -31,6 +42,8 @@ function personalFallback(): PersonalData {
     cryptoWallets: [],
     personalWallets: [],
     dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
+    capitalHistory: fallbackHistory(CHARTS["Г"].v),
+    cryptoHistory: fallbackHistory(CHARTS["6М"].v),
     synced: "Обновлено только что",
   };
 }
@@ -47,7 +60,9 @@ function companyFallback(): CompanyData {
 
 export async function getPersonalData(): Promise<PersonalData> {
   try {
-    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows] = await Promise.all([
+    // History charts show up to ~13 months back (covers the 1Y period + margin).
+    const historyFrom = new Date(Date.now() - 400 * 86400000);
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
@@ -56,7 +71,12 @@ export async function getPersonalData(): Promise<PersonalData> {
       prisma.expenseCategory.findMany({ orderBy: { value: "desc" } }),
       prisma.expenseSubcategory.findMany({ orderBy: { value: "desc" } }),
       prisma.wallet.findMany({ where: { scope: "personal" } }),
+      prisma.capitalSnapshot.findMany({ where: { scope: "personal", capturedAt: { gte: historyFrom } }, orderBy: { capturedAt: "asc" } }),
+      prisma.capitalSnapshot.findMany({ where: { scope: "crypto", capturedAt: { gte: historyFrom } }, orderBy: { capturedAt: "asc" } }),
     ]);
+
+    const toPoints = (rows: { capturedAt: Date; value: unknown }[]): SnapshotPoint[] =>
+      rows.map((s) => ({ t: s.capturedAt.toISOString(), label: dayMonthRu(s.capturedAt), value: num(s.value) }));
 
     const assets: Asset[] = assetRows.map((a) => ({
       id: a.slug ?? a.id,
@@ -122,6 +142,8 @@ export async function getPersonalData(): Promise<PersonalData> {
       cryptoWallets,
       personalWallets,
       dividendsList,
+      capitalHistory: toPoints(capitalSnaps),
+      cryptoHistory: toPoints(cryptoSnaps),
       synced: `Обновлено ${relativeRu(sync?.lastSyncedAt ?? null)}`,
     };
   } catch {
