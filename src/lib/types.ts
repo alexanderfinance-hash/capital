@@ -51,13 +51,27 @@ export interface ChartSeries {
   a: string;
 }
 
+export interface CryptoWalletHolding {
+  symbol: string;
+  label: string;
+  address: string;
+  amount: number;
+  usd: number;
+}
+export interface SubCat {
+  name: string;
+  value: number;
+}
+
 export interface PersonalStore {
   assets: Asset[];
   flows: { expenses: FlowExpenses; dividends: FlowDividends };
   expenseCats: ExpenseCat[];
   expensesByPeriod: Record<string, ExpenseCat[]>;
+  expenseSubs: Record<string, Record<string, SubCat[]>>; // period → parent → subs
   expenseMonths: ExpenseMonth[];
   coins: CoinAlloc[];
+  cryptoWallets: CryptoWalletHolding[];
   dividendsList: Dividend[];
 }
 
@@ -102,8 +116,10 @@ export interface PersonalData {
   flows: { expenses: FlowExpenses; dividends: FlowDividends };
   expenseCats: ExpenseCat[];
   expensesByPeriod: Record<string, ExpenseCat[]>;
+  expenseSubs: Record<string, Record<string, SubCat[]>>;
   expenseMonths: ExpenseMonth[];
   coins: CoinAlloc[];
+  cryptoWallets: CryptoWalletHolding[];
   dividendsList: Dividend[];
   synced: string;
 }

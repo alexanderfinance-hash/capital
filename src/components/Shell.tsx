@@ -16,7 +16,6 @@ const PERSONAL: NavDef[] = [
   { href: "/", icon: "grid", label: "Обзор" },
   { href: "/investments", icon: "trend", label: "Инвестиции" },
   { href: "/expenses", icon: "receipt", label: "Расходы" },
-  { href: "/dividends", icon: "divid", label: "Дивиденды" },
   { href: "/assets", icon: "box", label: "Активы" },
 ];
 const COMPANY: NavDef[] = [{ href: "/company", icon: "building", label: "Баланс компании" }];

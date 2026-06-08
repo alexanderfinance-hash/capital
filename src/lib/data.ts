@@ -25,8 +25,10 @@ function personalFallback(): PersonalData {
     flows: { expenses: { ...initialStore.flows.expenses }, dividends: { ...initialStore.flows.dividends } },
     expenseCats: initialStore.expenseCats.map((c) => ({ ...c })),
     expensesByPeriod: { ...initialStore.expensesByPeriod },
+    expenseSubs: {},
     expenseMonths: initialStore.expenseMonths.map((m) => ({ ...m })),
     coins: initialStore.coins.map((c) => ({ ...c })),
+    cryptoWallets: [],
     dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
     synced: "Обновлено только что",
   };
@@ -44,13 +46,15 @@ function companyFallback(): CompanyData {
 
 export async function getPersonalData(): Promise<PersonalData> {
   try {
-    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
       prisma.coinAllocation.findMany({ orderBy: { pct: "desc" } }),
       prisma.syncState.findUnique({ where: { source: "crypto" } }),
       prisma.expenseCategory.findMany({ orderBy: { value: "desc" } }),
+      prisma.expenseSubcategory.findMany({ orderBy: { value: "desc" } }),
+      prisma.wallet.findMany({ where: { scope: "personal" } }),
     ]);
 
     const assets: Asset[] = assetRows.map((a) => ({
@@ -78,6 +82,21 @@ export async function getPersonalData(): Promise<PersonalData> {
     const latestPeriod = months.length ? months[months.length - 1].period : "";
     const expenseCats = expensesByPeriod[latestPeriod] || [];
 
+    // Subcategories grouped by period → parent (for the expandable tree).
+    const expenseSubs: Record<string, Record<string, { name: string; value: number }[]>> = {};
+    for (const s of allSubs) {
+      ((expenseSubs[s.period] ||= {})[s.parent] ||= []).push({ name: s.name, value: num(s.value) });
+    }
+
+    // Per-wallet crypto breakdown (for the expandable coin list).
+    const cryptoWallets: { symbol: string; label: string; address: string; amount: number; usd: number }[] = [];
+    for (const w of personalWalletRows) {
+      const hs = Array.isArray(w.holdingsJson) ? (w.holdingsJson as any[]) : [];
+      for (const h of hs) {
+        if (h && h.symbol) cryptoWallets.push({ symbol: h.symbol, label: w.label, address: w.address, amount: Number(h.amount) || 0, usd: Number(h.usd) || 0 });
+      }
+    }
+
     const dividendsList = dividendRows.map((d) => ({ date: dayMonthRu(d.paidAt), name: d.name, amount: num(d.amount) }));
     const dividendsTotal = dividendsList.reduce((s, d) => s + d.amount, 0);
 
@@ -86,8 +105,10 @@ export async function getPersonalData(): Promise<PersonalData> {
       flows: { expenses: { value: lastV, delta: expensesDelta }, dividends: { value: dividendsTotal } },
       expenseCats,
       expensesByPeriod,
+      expenseSubs,
       expenseMonths: months,
       coins: coinRows.map((c) => ({ t: c.ticker, pct: c.pct })),
+      cryptoWallets,
       dividendsList,
       synced: `Обновлено ${relativeRu(sync?.lastSyncedAt ?? null)}`,
     };

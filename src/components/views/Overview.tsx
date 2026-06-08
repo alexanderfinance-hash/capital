@@ -66,14 +66,6 @@ export default function Overview() {
           right={<Chip d={store.flows.expenses.delta} goodOverride />}
           src="sheets"
         />
-        <FlowCard
-          icon="divid"
-          lab="Дивиденды"
-          cap="получено за год"
-          val={fmt(store.flows.dividends.value)}
-          right={<span className="delta up mono">YTD</span>}
-          src="manual"
-        />
         <AddAssetCard onClick={() => setModal(true)} />
       </div>
 

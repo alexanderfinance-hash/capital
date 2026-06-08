@@ -23,9 +23,10 @@ export async function fetchBtc(address: string): Promise<Holding[]> {
     const res = await fetch(`${base}/address/${address}`, { signal: signal() });
     if (!res.ok) return [];
     const j: any = await res.json();
-    const funded = j?.chain_stats?.funded_txo_sum ?? 0;
-    const spent = j?.chain_stats?.spent_txo_sum ?? 0;
-    const sats = funded - spent;
+    const cs = j?.chain_stats ?? {};
+    const ms = j?.mempool_stats ?? {};
+    const sats =
+      (cs.funded_txo_sum ?? 0) - (cs.spent_txo_sum ?? 0) + (ms.funded_txo_sum ?? 0) - (ms.spent_txo_sum ?? 0);
     return sats > 0 ? [{ symbol: "BTC", amount: sats / 1e8 }] : [];
   } catch {
     return [];
@@ -99,7 +100,14 @@ export async function fetchTron(address: string): Promise<Holding[]> {
     const acc = j?.data?.[0];
     if (!acc) return [];
     const out: Holding[] = [];
-    if (acc.balance) out.push({ symbol: "TRX", amount: acc.balance / 1e6 });
+    // Liquid + staked/frozen TRX (frozenV2 = new staking, account_resource/frozen = legacy).
+    let sun = Number(acc.balance || 0);
+    for (const f of acc.frozenV2 || []) sun += Number(f.amount || 0);
+    for (const f of acc.frozen || []) sun += Number(f.frozen_balance || 0);
+    const ar = acc.account_resource || {};
+    sun += Number(ar.frozen_balance_for_energy?.frozen_balance || 0);
+    if (acc.delegated_frozenV2_balance_for_bandwidth) sun += Number(acc.delegated_frozenV2_balance_for_bandwidth || 0);
+    if (sun > 0) out.push({ symbol: "TRX", amount: sun / 1e6 });
     for (const t of acc.trc20 || []) {
       const amt = t[TRON_USDT];
       if (amt) out.push({ symbol: "USDT", amount: Number(amt) / 1e6 });

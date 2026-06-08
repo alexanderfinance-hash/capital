@@ -11,6 +11,7 @@ import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow } from "../ui";
 export default function Investments() {
   const { store, refreshPersonal, personalSyncing } = useApp();
   const [period, setPeriod] = useState("6М");
+  const [openSym, setOpenSym] = useState<string | null>(null);
   const c = CHARTS[period];
   const cr = store.assets.filter((a) => a.bucket === "crypto");
   const crTotal = cr.reduce((s, a) => s + a.value, 0);
@@ -59,32 +60,74 @@ export default function Investments() {
         <div className="k" style={{ padding: "14px 0 4px" }}>
           Холдинги
         </div>
-        {cr.map((a) => (
-          <div className="mlist-row" key={a.id}>
-            <div className="tile">
-              <Icon name={a.icon} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>{a.name}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
-                <Badge src={a.src} />
-                {a.amount != null && a.symbol && (
-                  <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                    {fmtAmount(a.amount)} {a.symbol}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div className="mono" style={{ fontSize: 15, fontWeight: 500 }}>
-                {fmt(a.value)}
-              </div>
-              <div style={{ marginTop: 2 }}>
-                <Chip d={a.delta} />
-              </div>
-            </div>
+        {cr.length === 0 && (
+          <div className="h-sub" style={{ padding: "12px 0 18px" }}>
+            Нет крипто-холдингов. Балансы появятся после синхронизации (кнопка обновления вверху).
           </div>
-        ))}
+        )}
+        {cr.map((a) => {
+          const sym = a.symbol || "";
+          const subWallets = store.cryptoWallets.filter((w) => w.symbol === sym).sort((x, y) => y.usd - x.usd);
+          const open = openSym === sym;
+          return (
+            <div key={a.id} style={{ borderBottom: "1px solid var(--hair-2)" }}>
+              <button
+                onClick={() => subWallets.length && setOpenSym(open ? null : sym)}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 0", background: "none", border: "none", cursor: subWallets.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
+              >
+                <div className="tile">
+                  <Icon name={a.icon} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 500 }}>
+                    {a.name}
+                    {subWallets.length > 0 && (
+                      <span style={{ color: "var(--faint)", transition: "transform .15s", transform: `rotate(${open ? 90 : 0}deg)`, fontSize: 14 }}>›</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                    <Badge src={a.src} />
+                    {a.amount != null && a.symbol && (
+                      <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                        {fmtAmount(a.amount)} {a.symbol} · {subWallets.length} кош.
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div className="mono" style={{ fontSize: 15, fontWeight: 500 }}>
+                    {fmt(a.value)}
+                  </div>
+                  <div style={{ marginTop: 2 }}>
+                    <Chip d={a.delta} />
+                  </div>
+                </div>
+              </button>
+              {open && (
+                <div style={{ padding: "2px 0 12px 48px" }}>
+                  {subWallets.map((w, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: "1px solid var(--hair-2)" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 500 }}>{w.label}</div>
+                        <div className="mono" style={{ fontSize: 11, color: "var(--faint)" }}>
+                          {w.address.length > 16 ? `${w.address.slice(0, 8)}…${w.address.slice(-6)}` : w.address}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div className="mono" style={{ fontSize: 12.5, fontWeight: 500 }}>
+                          {fmtAmount(w.amount)} {w.symbol}
+                        </div>
+                        <div className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>
+                          {fmt(w.usd)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </>
   );

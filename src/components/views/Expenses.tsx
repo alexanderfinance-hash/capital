@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useApp } from "@/lib/store";
 import { fmt } from "@/lib/format";
 import { Chip, Badge } from "@/lib/chart";
-import { Topbar, BarRow } from "../ui";
+import { Topbar } from "../ui";
 
 export default function Expenses() {
   const { store } = useApp();
@@ -18,6 +18,8 @@ export default function Expenses() {
   const period = sel?.period ?? "";
   const cats = (period && store.expensesByPeriod[period]) || store.expenseCats;
   const maxC = Math.max(1, ...cats.map((c) => c.value));
+  const subs = (period && store.expenseSubs[period]) || {};
+  const [openCat, setOpenCat] = useState<string | null>(null);
 
   const value = sel?.v ?? 0;
   const prev = idx > 0 ? months[idx - 1].v : value;
@@ -81,7 +83,43 @@ export default function Expenses() {
             {cats.length === 0 ? (
               <div className="h-sub">Нет категорий за этот месяц.</div>
             ) : (
-              cats.map((cat) => <BarRow key={cat.name} label={cat.name} val={fmt(cat.value)} frac={cat.value / maxC} color="var(--neg)" />)
+              cats.map((cat) => {
+                const sub = (subs[cat.name] || []).slice().sort((a, b) => b.value - a.value);
+                const open = openCat === cat.name;
+                const maxS = Math.max(1, ...sub.map((s) => s.value));
+                return (
+                  <div key={cat.name}>
+                    <button
+                      onClick={() => sub.length && setOpenCat(open ? null : cat.name)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "9px 0", background: "none", border: "none", cursor: sub.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
+                    >
+                      <span style={{ flex: "none", width: 12, color: "var(--faint)", fontSize: 13, transition: "transform .15s", transform: `rotate(${open ? 90 : 0}deg)`, opacity: sub.length ? 1 : 0 }}>›</span>
+                      <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)" }}>{cat.name}</span>
+                      <div style={{ flex: "none", width: 70, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${((cat.value / maxC) * 100).toFixed(0)}%`, background: "var(--neg)", borderRadius: 5 }} />
+                      </div>
+                      <span className="mono" style={{ flex: "none", width: 64, textAlign: "right", fontSize: 12.5, fontWeight: 500 }}>
+                        {fmt(cat.value)}
+                      </span>
+                    </button>
+                    {open && (
+                      <div style={{ padding: "0 0 8px 24px" }}>
+                        {sub.map((s) => (
+                          <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                            <span style={{ flex: 1, fontSize: 11.5, color: "var(--muted)" }}>{s.name}</span>
+                            <div style={{ flex: "none", width: 50, height: 6, borderRadius: 4, background: "var(--hair-2)", overflow: "hidden" }}>
+                              <div style={{ height: "100%", width: `${((s.value / maxS) * 100).toFixed(0)}%`, background: "var(--neg)", opacity: 0.6, borderRadius: 4 }} />
+                            </div>
+                            <span className="mono" style={{ flex: "none", width: 58, textAlign: "right", fontSize: 11.5, color: "var(--ink-2)" }}>
+                              {fmt(s.value)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

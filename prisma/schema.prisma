@@ -92,6 +92,7 @@ model Wallet {
   kind         WalletKind?
   balance      Decimal      @default(0) @db.Decimal(30, 8) // token units
   balanceUsd   Decimal      @default(0) @db.Decimal(18, 2)
+  holdingsJson Json? // per-coin breakdown for this address: [{symbol,amount,usd}]
   lastSyncedAt DateTime?
   createdAt    DateTime     @default(now())
 
@@ -147,6 +148,17 @@ model ExpenseCategory {
   period String // "2025-06"
 
   @@unique([period, name])
+}
+
+/// Expense breakdown by subcategory (Подстатья) within a category, per period.
+model ExpenseSubcategory {
+  id     String  @id @default(cuid())
+  period String
+  parent String // Статья
+  name   String // Подстатья
+  value  Decimal @db.Decimal(18, 2)
+
+  @@index([period, parent])
 }
 
 /// Coin allocation for the investments view (derived from wallets in Stage 6).

@@ -69,12 +69,12 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
 
   // 4) Persist.
   await prisma.$transaction(async (tx) => {
-    // per-wallet balances (both contours)
+    // per-wallet balances (both contours) + per-coin breakdown
     for (const f of fetched) {
       const usd = f.holdings.reduce((s, h) => s + usdOf(h), 0);
-      // native amount = first holding of the chain's native or the largest stable
       const native = f.holdings[0]?.amount ?? 0;
-      await tx.wallet.update({ where: { id: f.id }, data: { balance: native, balanceUsd: usd, lastSyncedAt: new Date() } });
+      const holdingsJson = f.holdings.map((h) => ({ symbol: h.symbol, amount: h.amount, usd: usdOf(h) }));
+      await tx.wallet.update({ where: { id: f.id }, data: { balance: native, balanceUsd: usd, holdingsJson, lastSyncedAt: new Date() } });
     }
 
     // personal per-coin synced assets (replace previous synced crypto assets)

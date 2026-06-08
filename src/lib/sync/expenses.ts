@@ -35,12 +35,18 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
   const tab = process.env.GOOGLE_SHEETS_EXPENSES_TAB || "Отчет";
   const catTab = process.env.GOOGLE_SHEETS_CATEGORIES_TAB || "Категории ";
 
-  // 1) Top-level expense articles (Статья) from the Категории sheet.
+  // 1) Categories (Статья) and subcategories (Подстатья) from the Категории sheet.
   const catRows = await readValues(catTab, "A1:C200");
   const statyaSet = new Set<string>();
+  const subToParent = new Map<string, string>(); // Подстатья → Статья (Расход)
   for (let i = 1; i < catRows.length; i++) {
-    const [statya, , type] = catRows[i] || [];
-    if (statya && (type || "").trim() === "Расход") statyaSet.add(statya.trim());
+    const [statya, podstatya, type] = catRows[i] || [];
+    if (statya && (type || "").trim() === "Расход") {
+      statyaSet.add(statya.trim());
+      const sub = (podstatya || "").trim();
+      // Skip subs whose name equals the parent (avoids double counting header rows).
+      if (sub && sub !== statya.trim() && !subToParent.has(sub)) subToParent.set(sub, statya.trim());
+    }
   }
   const exclude = excludeSet();
 
@@ -89,16 +95,36 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
   const monthTotal = new Map<MonthKey, number>();
   const monthMeta = new Map<MonthKey, { year: number; month: number }>();
   const catByMonth = new Map<MonthKey, Map<string, number>>();
+  // period → parent → subName → usd
+  const subByMonth = new Map<MonthKey, Map<string, Map<string, number>>>();
 
   for (const mc of monthCols) {
     const key = `${mc.year}-${String(mc.month).padStart(2, "0")}`;
     monthMeta.set(key, { year: mc.year, month: mc.month });
     monthTotal.set(key, 0);
     catByMonth.set(key, new Map());
+    subByMonth.set(key, new Map());
   }
 
   for (let r = 1; r < rows.length; r++) {
     const name = (rows[r]?.[0] || "").trim();
+
+    // Subcategory row → attribute to its parent (for the expandable tree).
+    const parent = subToParent.get(name);
+    if (parent && !exclude.has(parent)) {
+      for (const w of weekCols) {
+        const mk = weekMonth.get(w.c);
+        if (!mk) continue;
+        const rub = Math.abs(parseNum(rows[r][w.c]));
+        if (!rub) continue;
+        const usd = usdOf(rub, w.endISO);
+        const key = `${mk.year}-${String(mk.month).padStart(2, "0")}`;
+        const pm = subByMonth.get(key)!;
+        const sm = pm.get(parent) || pm.set(parent, new Map()).get(parent)!;
+        sm.set(name, (sm.get(name) || 0) + usd);
+      }
+    }
+
     if (!name || !statyaSet.has(name) || exclude.has(name)) continue;
     for (const w of weekCols) {
       const mk = weekMonth.get(w.c);
@@ -122,6 +148,7 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
   await prisma.$transaction(async (tx) => {
     await tx.expenseMonth.deleteMany();
     await tx.expenseCategory.deleteMany();
+    await tx.expenseSubcategory.deleteMany();
 
     for (const key of lastKeys) {
       const meta = monthMeta.get(key)!;
@@ -144,6 +171,19 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
       if (restSum > 0) top.push({ name: "Прочее", value: restSum });
       for (const c of top) {
         await tx.expenseCategory.create({ data: { period: key, name: c.name, value: c.value } });
+      }
+    }
+
+    // Subcategory breakdown per month (for the expandable tree).
+    for (const key of lastKeys) {
+      const pm = subByMonth.get(key);
+      if (!pm) continue;
+      for (const [parent, sm] of pm) {
+        if (exclude.has(parent)) continue;
+        for (const [subName, v] of sm) {
+          const value = Math.round(v);
+          if (value > 0) await tx.expenseSubcategory.create({ data: { period: key, parent, name: subName, value } });
+        }
       }
     }
 

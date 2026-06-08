@@ -85,8 +85,10 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     flows: { expenses: { ...initial.personal.flows.expenses }, dividends: { ...initial.personal.flows.dividends } },
     expenseCats: initial.personal.expenseCats.map((c) => ({ ...c })),
     expensesByPeriod: initial.personal.expensesByPeriod,
+    expenseSubs: initial.personal.expenseSubs,
     expenseMonths: initial.personal.expenseMonths.map((m) => ({ ...m })),
     coins: initial.personal.coins.map((c) => ({ ...c })),
+    cryptoWallets: initial.personal.cryptoWallets.map((w) => ({ ...w })),
     dividendsList: initial.personal.dividendsList.map((d) => ({ ...d })),
   }));
   const [personalSynced, setPersonalSynced] = useState(initial.personal.synced);
