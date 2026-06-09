@@ -161,15 +161,13 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
       });
     }
 
-    // Category breakdown for EVERY shown month (top 7 + "Прочее") so the UI
-    // can switch months by clicking the bars.
+    // Category breakdown for EVERY shown month so the UI can switch months by
+    // clicking the bars. Categories mirror the sheet 1:1 — no synthetic
+    // "Прочее" bucket (the sheet has no such row).
     for (const key of lastKeys) {
       const cm = catByMonth.get(key) || new Map<string, number>();
       const sorted = [...cm.entries()].map(([name, v]) => ({ name, value: Math.round(v) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
-      const top = sorted.slice(0, 7);
-      const restSum = sorted.slice(7).reduce((s, x) => s + x.value, 0);
-      if (restSum > 0) top.push({ name: "Прочее", value: restSum });
-      for (const c of top) {
+      for (const c of sorted) {
         await tx.expenseCategory.create({ data: { period: key, name: c.name, value: c.value } });
       }
     }
