@@ -21,7 +21,7 @@ jobs:
           script: |
             cd "$HOME/capital" || { echo "Нет каталога ~/capital"; exit 1; }
             echo "=== .env: факт наличия (без значений) ==="
-            for k in TRONGRID_API_KEY CMC_API_KEY DOMAIN APP_PASSWORD AUTH_SECRET CRON_SECRET; do
+            for k in TRONGRID_API_KEY CMC_API_KEY DOMAIN APP_PASSWORD AUTH_SECRET CRON_SECRET TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
               v=$(grep -E "^${k}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)
               if [ -n "$v" ]; then echo "$k: задан"; else echo "$k: НЕ задан / пуст"; fi
             done

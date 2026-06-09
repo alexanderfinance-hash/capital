@@ -203,3 +203,14 @@ model FxRate {
   source    String   @default("cbr")
   fetchedAt DateTime @default(now())
 }
+
+/// Cursor for the Telegram agency-balances integration. Stores the
+/// getUpdates offset (last processed update_id) so messages from the chat
+/// aren't reprocessed, plus diagnostics about the last consumed report.
+model TelegramState {
+  id            String    @id @default("default")
+  offset        BigInt    @default(0) // next getUpdates offset (lastUpdateId + 1)
+  lastChatId    String? // chat the last report came from
+  lastMessageAt DateTime? // timestamp of the last consumed balances message
+  updatedAt     DateTime  @updatedAt
+}

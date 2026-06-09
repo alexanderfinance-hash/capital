@@ -180,7 +180,7 @@ function AgenciesGroup({ c }: { c: CompanyComputed }) {
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--sync)", flex: "none" }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 500 }}>Рекламные агентства</div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{agencies.length} агентств · ручной ввод</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{agencies.length} агентств · из Telegram + ручная правка</div>
         </div>
         <span className="mono" style={{ fontSize: 14, fontWeight: 500 }}>
           {money(c.agenciesTotal)}
@@ -219,7 +219,7 @@ function AgenciesGroup({ c }: { c: CompanyComputed }) {
             </div>
           ))}
           {agencies.length === 0 && <div style={{ fontSize: 11, color: "var(--muted)", padding: "10px 4px" }}>Агентств пока нет.</div>}
-          <div style={{ fontSize: 11, color: "var(--muted)", padding: "10px 4px 4px", borderTop: "1px solid var(--hair-2)" }}>Нажмите на сумму, чтобы изменить вручную</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", padding: "10px 4px 4px", borderTop: "1px solid var(--hair-2)" }}>Остатки подтягиваются из ежедневного отчёта в Telegram. Нажмите на сумму, чтобы поправить вручную.</div>
         </div>
       )}
     </>

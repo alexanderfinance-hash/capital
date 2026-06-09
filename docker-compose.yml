@@ -41,6 +41,11 @@ services:
       BSC_RPC_URL: "${BSC_RPC_URL:-}"
       TRONGRID_API_KEY: "${TRONGRID_API_KEY:-}"
       TON_API_KEY: "${TON_API_KEY:-}"
+      # Telegram (agency balances pulled from the company chat)
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+      TELEGRAM_REPORT_MARKER: "${TELEGRAM_REPORT_MARKER:-}"
+      TELEGRAM_AGENCY_AUTOCREATE: "${TELEGRAM_AGENCY_AUTOCREATE:-true}"
       CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
       # Service-account key is mounted (below) rather than baked into the image.
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/app/secrets/google-service-account.json}"
@@ -61,6 +66,7 @@ services:
       CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
       SYNC_CRYPTO_CRON: "${SYNC_CRYPTO_CRON:-*/10 * * * *}"
       SYNC_EXPENSES_CRON: "${SYNC_EXPENSES_CRON:-0 * * * *}"
+      SYNC_TELEGRAM_CRON: "${SYNC_TELEGRAM_CRON:-*/15 * * * *}"
     # Bypass the migrate/seed entrypoint — only the app runs migrations.
     entrypoint: ["npm", "run", "worker"]
 
