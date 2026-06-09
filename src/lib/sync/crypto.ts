@@ -3,8 +3,42 @@
  *  - company:  per-wallet USDT-TRC20 balance → Wallet.balanceUsd
  * Prices via CMC. Providers are injectable for testing; defaults hit live APIs. */
 import "server-only";
+import type { Prisma, SnapshotScope } from "@prisma/client";
 import { prisma } from "../prisma";
 import { defaultProviders, type CryptoProviders, type Holding } from "../crypto/providers";
+
+/** UTC midnight for the day containing `d` (snapshot bucketing boundary). */
+function startOfUtcDay(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+/** Persist one capital snapshot per calendar day per scope (PRD §6).
+ *  Sync runs several times a day. Today's point is "live": every run rewrites it
+ *  with the latest value, so it moves through the day and settles on its last
+ *  (≈ end-of-day) value once the day rolls over. Past days keep a single point —
+ *  the latest one recorded that day. Any same-day duplicates left over from
+ *  before the daily-snapshot switch are collapsed to that latest point too
+ *  (self-healing on the next sync). */
+async function writeDailySnapshot(tx: Prisma.TransactionClient, scope: SnapshotScope, value: number): Promise<void> {
+  const rows = await tx.capitalSnapshot.findMany({ where: { scope }, orderBy: { capturedAt: "asc" } });
+
+  // Group by UTC day, keeping the LATEST row of each day (end-of-day state) as
+  // canonical and marking earlier same-day rows as duplicates to drop.
+  const keepByDay = new Map<number, string>();
+  const dupeIds: string[] = [];
+  for (const r of rows) {
+    const day = startOfUtcDay(r.capturedAt).getTime();
+    const prev = keepByDay.get(day);
+    if (prev) dupeIds.push(prev);
+    keepByDay.set(day, r.id);
+  }
+  if (dupeIds.length) await tx.capitalSnapshot.deleteMany({ where: { id: { in: dupeIds } } });
+
+  const today = startOfUtcDay(new Date()).getTime();
+  const todayId = keepByDay.get(today);
+  if (todayId) await tx.capitalSnapshot.update({ where: { id: todayId }, data: { value } });
+  else await tx.capitalSnapshot.create({ data: { scope, value } });
+}
 
 const COIN_META: Record<string, { name: string; icon: string }> = {
   BTC: { name: "Bitcoin", icon: "coins" },
@@ -137,14 +171,17 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
       await tx.coinAllocation.create({ data: { ticker: c.symbol, pct: totalCrypto ? Math.round((c.usd / totalCrypto) * 100) : 0 } });
     }
 
-    // capital snapshot (personal total = all assets)
+    // capital snapshots — PRD §6: один снимок в день на каждый scope.
+    // Синк крутится несколько раз в день, поэтому не создаём новую точку каждый
+    // раз: переписываем сегодняшнюю последним значением (и подчищаем дубли,
+    // накопившиеся до перехода на ежедневные снимки), чтобы линия была гладкой.
     const allAssets = await tx.asset.findMany();
     const personalTotal = allAssets.reduce((s, a) => s + Number(a.value), 0);
-    await tx.capitalSnapshot.create({ data: { scope: "personal", value: personalTotal } });
+    await writeDailySnapshot(tx, "personal", personalTotal);
 
     // crypto-portfolio snapshot (Investments chart — PRD §6: третий ряд снимков)
     const cryptoTotal = allAssets.filter((a) => a.bucket === "crypto").reduce((s, a) => s + Number(a.value), 0);
-    await tx.capitalSnapshot.create({ data: { scope: "crypto", value: cryptoTotal } });
+    await writeDailySnapshot(tx, "crypto", cryptoTotal);
 
     // company snapshot (wallets + agencies)
     const companyWallets = await tx.wallet.findMany({ where: { scope: "company" } });
@@ -152,7 +189,7 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     const companyTotal =
       companyWallets.reduce((s, w) => s + Number(w.balanceUsd), 0) + agencies.reduce((s, a) => s + Number(a.balance), 0);
     if (companyWallets.length || agencies.length) {
-      await tx.capitalSnapshot.create({ data: { scope: "company", value: companyTotal } });
+      await writeDailySnapshot(tx, "company", companyTotal);
     }
 
     await tx.syncState.upsert({
