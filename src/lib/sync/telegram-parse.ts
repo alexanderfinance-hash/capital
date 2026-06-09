@@ -129,16 +129,75 @@ export function parseLine(line: string): { name: string; amount: number } | null
 /** Normalize a name for case/whitespace-insensitive matching. */
 export const normName = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
+/** Telegram message entity (bold/italic/…); offsets are UTF-16 code units. */
+export interface TextEntity {
+  type: string;
+  offset: number;
+  length: number;
+}
+
+/** Map each line index to its bold spans, as [startInLine, endInLine] pairs.
+ *  Entity offsets are absolute (UTF-16) over `text`; we split on "\n" and clip
+ *  each bold entity to the lines it covers. */
+function boldSegsByLine(text: string, entities?: TextEntity[]): Map<number, [number, number][]> {
+  const map = new Map<number, [number, number][]>();
+  if (!entities?.length) return map;
+  const lines = text.split("\n");
+  const ranges: { start: number; end: number }[] = [];
+  let pos = 0;
+  for (const l of lines) {
+    ranges.push({ start: pos, end: pos + l.length });
+    pos += l.length + 1; // account for the "\n"
+  }
+  for (const e of entities) {
+    if (e.type !== "bold") continue;
+    const s = e.offset;
+    const en = e.offset + e.length;
+    for (let i = 0; i < ranges.length; i++) {
+      const a = Math.max(s, ranges[i].start);
+      const b = Math.min(en, ranges[i].end);
+      if (a < b) (map.get(i) || map.set(i, []).get(i)!).push([a - ranges[i].start, b - ranges[i].start]);
+    }
+  }
+  return map;
+}
+
+/** Bold name for a line, restricted to the part BEFORE the balance (`bound`). */
+function boldName(line: string, segs: [number, number][] | undefined, bound: number): string | null {
+  if (!segs?.length) return null;
+  const parts: string[] = [];
+  for (const [s, e] of segs) {
+    const end = Math.min(e, bound);
+    if (s < end) parts.push(line.slice(s, end));
+  }
+  const name = cleanName(parts.join(""));
+  return name.length >= 2 && !HEADER_RE.test(name) ? name : null;
+}
+
 /** Parse a whole report message into {name, amount} entries (deduped, first
- *  occurrence wins). Picks spend-note mode when any line carries a spend note. */
-export function parseReport(text: string): { name: string; amount: number }[] {
-  const lines = (text || "").split(/\r?\n/);
+ *  occurrence wins). Picks spend-note mode when any line carries a spend note.
+ *  When Telegram `entities` are given, the agency name is taken from the BOLD
+ *  text before the balance (PRD: «название — это жирный текст до "-"»). */
+export function parseReport(text: string, entities?: TextEntity[]): { name: string; amount: number }[] {
+  const src = (text || "").replace(/\r/g, "");
+  const lines = src.split("\n");
+  const segs = boldSegsByLine(src, entities);
   const spendMode = lines.some((l) => SPEND_RE.test(l));
   const out: { name: string; amount: number }[] = [];
   const seen = new Set<string>();
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const e = spendMode ? parseSpendLine(line) : parseLine(line);
     if (!e) continue;
+
+    // Prefer the bold-formatted name (clipped to the pre-balance region).
+    const m = spendMode ? line.match(SPEND_RE) : null;
+    const pre = m ? line.slice(0, m.index) : line;
+    const numIdx = lastNumberIndex(pre);
+    const bound = numIdx >= 0 ? numIdx : pre.length;
+    const bn = boldName(line, segs.get(i), bound);
+    if (bn) e.name = bn;
+
     const key = normName(e.name);
     if (seen.has(key)) continue;
     seen.add(key);

@@ -62,7 +62,8 @@ export async function syncTelegramAgencies(): Promise<TelegramSyncResult> {
   if (report) {
     const by = senderLabel(report);
     const text = report.text || report.caption || "";
-    const parsed = parseReport(text);
+    const entities = report.entities || report.caption_entities;
+    const parsed = parseReport(text, entities);
 
     await prisma.$transaction(async (tx) => {
       const agencies = await tx.agency.findMany();
