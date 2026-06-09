@@ -46,9 +46,11 @@ jobs:
             # 1) wireguard-tools
             if ! command -v wg-quick >/dev/null 2>&1; then
               echo "→ устанавливаю wireguard-tools"
-              $SUDO apt-get update -qq || true
-              $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq wireguard-tools \
-                || $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq wireguard \
+              export DEBIAN_FRONTEND=noninteractive
+              APT="apt-get"; [ "$(id -u)" -ne 0 ] && APT="sudo -E apt-get"
+              $APT update -qq || true
+              $APT install -y -qq wireguard-tools \
+                || $APT install -y -qq wireguard \
                 || { echo "✗ не удалось установить wireguard (нужен root/sudo)"; exit 1; }
             fi
 
