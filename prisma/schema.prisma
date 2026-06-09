@@ -115,13 +115,15 @@ model Agency {
 }
 
 /// What-if reserves (singleton). Formula: available = wallets + agencies
-/// − salaryWeekly×salaryWeeks − tech.
+/// − salaryWeekly×salaryWeeks − tech − agencyReserve.
 model Reserve {
-  id           String   @id @default("default")
-  salaryWeekly Int
-  salaryWeeks  Int
-  tech         Int
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default("default")
+  salaryWeekly  Int
+  salaryWeeks   Int
+  tech          Int
+  /// Резерв на рекламные агентства (manual buffer; usually balances + reserve = $40k).
+  agencyReserve Int      @default(0)
+  updatedAt     DateTime @updatedAt
 }
 
 /// Dividend payouts — manual entry; YTD is an aggregate.

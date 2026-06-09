@@ -16,6 +16,7 @@ export interface CompanyComputed {
   walletsTotal: number;
   agenciesTotal: number;
   salaryReserve: number;
+  agencyReserve: number; // резерв на рекламные агентства
   payable: number; // кредиторская задолженность CoinLink
   total: number;
   available: number;
@@ -286,10 +287,11 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const compute = useCallback((): CompanyComputed => {
     const agenciesTotal = agencies.reduce((s, a) => s + a.balance, 0);
     const salaryReserve = reserves.salaryWeekly * reserves.salaryWeeks;
+    const agencyReserve = reserves.agencyReserve;
     const payableTotal = payable.total;
     const total = walletsTotal + agenciesTotal;
-    const available = total - salaryReserve - reserves.tech - payableTotal;
-    return { walletsTotal, agenciesTotal, salaryReserve, payable: payableTotal, total, available };
+    const available = total - salaryReserve - reserves.tech - agencyReserve - payableTotal;
+    return { walletsTotal, agenciesTotal, salaryReserve, agencyReserve, payable: payableTotal, total, available };
   }, [agencies, reserves, walletsTotal, payable.total]);
 
   const value: AppState = {
