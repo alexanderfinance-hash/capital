@@ -8,6 +8,7 @@ const CRON_SECRET = process.env.CRON_SECRET || "";
 const CRYPTO_CRON = process.env.SYNC_CRYPTO_CRON || "*/10 * * * *"; // every 10 min
 const EXPENSES_CRON = process.env.SYNC_EXPENSES_CRON || "0 * * * *"; // hourly
 const TELEGRAM_CRON = process.env.SYNC_TELEGRAM_CRON || "*/15 * * * *"; // every 15 min
+const COINLINK_CRON = process.env.SYNC_COINLINK_CRON || "*/30 * * * *"; // every 30 min
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -51,8 +52,9 @@ async function waitForApp(maxMs = 120000) {
 cron.schedule(CRYPTO_CRON, () => trigger("/api/sync/crypto"));
 cron.schedule(EXPENSES_CRON, () => trigger("/api/sync/expenses"));
 cron.schedule(TELEGRAM_CRON, () => trigger("/api/sync/telegram"));
+cron.schedule(COINLINK_CRON, () => trigger("/api/sync/coinlink"));
 
-console.log(`worker started · crypto="${CRYPTO_CRON}" expenses="${EXPENSES_CRON}" telegram="${TELEGRAM_CRON}" app=${APP_URL}`);
+console.log(`worker started · crypto="${CRYPTO_CRON}" expenses="${EXPENSES_CRON}" telegram="${TELEGRAM_CRON}" coinlink="${COINLINK_CRON}" app=${APP_URL}`);
 
 // Kick once on boot — but only after the app is actually reachable.
 (async () => {
@@ -60,4 +62,5 @@ console.log(`worker started · crypto="${CRYPTO_CRON}" expenses="${EXPENSES_CRON
   await trigger("/api/sync/crypto");
   await trigger("/api/sync/expenses");
   await trigger("/api/sync/telegram");
+  await trigger("/api/sync/coinlink");
 })();

@@ -21,7 +21,7 @@ jobs:
           script: |
             cd "$HOME/capital" || { echo "Нет каталога ~/capital"; exit 1; }
             echo "=== .env: факт наличия (без значений) ==="
-            for k in TRONGRID_API_KEY CMC_API_KEY DOMAIN APP_PASSWORD AUTH_SECRET CRON_SECRET TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_WEBHOOK_SECRET; do
+            for k in TRONGRID_API_KEY CMC_API_KEY DOMAIN APP_PASSWORD AUTH_SECRET CRON_SECRET TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_WEBHOOK_SECRET COINLINK_DATABASE_URL; do
               v=$(grep -E "^${k}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)
               if [ -n "$v" ]; then echo "$k: задан"; else echo "$k: НЕ задан / пуст"; fi
             done
@@ -56,3 +56,16 @@ jobs:
             echo "=== telegram: состояние в БД ==="
             docker exec capital-db-1 psql -U capital -d capital -t -A -F' | ' -c "SELECT 'telegram sync: '||COALESCE(to_char(\"lastSyncedAt\",'YYYY-MM-DD HH24:MI'),'—') FROM \"SyncState\" WHERE source='telegram';" 2>/dev/null || echo "sync state: недоступно"
             docker exec capital-db-1 psql -U capital -d capital -t -A -F' | ' -c "SELECT platform, balance, to_char(\"updatedAt\",'MM-DD HH24:MI'), \"enteredBy\" FROM \"Agency\" ORDER BY \"updatedAt\" DESC LIMIT 6;" 2>/dev/null || echo "agencies: недоступно"
+            # CoinLink: кредиторская задолженность из внешней БД. Пробный синк сейчас
+            # (ok + total + период) и итог в БД приложения (последнее значение/свежесть).
+            echo "=== coinlink: видит ли app внешнюю БД ==="
+            if docker exec capital-app-1 sh -c '[ -n "$COINLINK_DATABASE_URL" ] || [ -n "$COINLINK_DB_HOST" ]' 2>/dev/null; then
+              echo "app: COINLINK_DATABASE_URL задан"
+            else
+              echo "app: COINLINK_DATABASE_URL НЕ задан (или контейнер недоступен)"
+            fi
+            echo "=== coinlink: пробный синк сейчас ==="
+            curl -s -m 30 -X POST -H "x-cron-key: $CRON" http://127.0.0.1:3000/api/sync/coinlink | head -c 800 || echo "coinlink: запрос не выполнен"
+            echo
+            echo "=== coinlink: состояние в БД ==="
+            docker exec capital-db-1 psql -U capital -d capital -t -A -F' | ' -c "SELECT 'payable: '||\"totalUsdt\"||' usdt · обновлено '||COALESCE(to_char(\"lastSyncedAt\",'YYYY-MM-DD HH24:MI'),'—') FROM \"CoinlinkPayable\" WHERE id='default';" 2>/dev/null || echo "coinlink: недоступно"

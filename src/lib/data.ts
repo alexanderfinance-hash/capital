@@ -53,6 +53,7 @@ function companyFallback(): CompanyData {
     wallets: WALLETS.map((w) => ({ ...w })),
     agencies: AGENCIES.map((a) => ({ ...a })),
     reserves: { ...DEFAULT_RESERVES },
+    payable: { total: 0, partners: [], synced: "ожидает синхронизации", staleDays: -1 },
     history: HISTORY.map((h) => ({ ...h })),
     synced: "2 мин назад",
   };
@@ -153,10 +154,11 @@ export async function getPersonalData(): Promise<PersonalData> {
 
 export async function getCompanyData(): Promise<CompanyData> {
   try {
-    const [walletRows, agencyRows, reserve, snapshots, sync] = await Promise.all([
+    const [walletRows, agencyRows, reserve, payableRow, snapshots, sync] = await Promise.all([
       prisma.wallet.findMany({ where: { scope: "company" }, orderBy: { balanceUsd: "desc" } }),
       prisma.agency.findMany({ orderBy: { balance: "desc" } }),
       prisma.reserve.findUnique({ where: { id: "default" } }),
+      prisma.coinlinkPayable.findUnique({ where: { id: "default" } }),
       // Company wallet history is shown year-to-date — from Jan 1 of the current year.
       prisma.capitalSnapshot.findMany({
         where: { scope: "company", capturedAt: { gte: new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1)) } },
@@ -181,12 +183,22 @@ export async function getCompanyData(): Promise<CompanyData> {
       return { id: a.slug ?? a.id, platform: a.platform, name: a.name, balance: num(a.balance), updated: label, staleDays, by: a.enteredBy };
     });
 
+    const payablePartners = Array.isArray(payableRow?.partners)
+      ? (payableRow!.partners as any[]).map((p) => ({ partner: String(p?.partner ?? "—"), debt: Number(p?.debt) || 0 }))
+      : [];
+
     return {
       wallets,
       agencies,
       reserves: reserve
         ? { salaryWeekly: reserve.salaryWeekly, salaryWeeks: reserve.salaryWeeks, tech: reserve.tech }
         : { ...DEFAULT_RESERVES },
+      payable: {
+        total: payableRow ? num(payableRow.totalUsdt) : 0,
+        partners: payablePartners,
+        synced: relativeRu(payableRow?.lastSyncedAt ?? null),
+        staleDays: payableRow?.lastSyncedAt ? daysAgoRu(payableRow.lastSyncedAt).staleDays : -1,
+      },
       history: snapshots.map((s) => ({ week: dayMonthRu(s.capturedAt), value: num(s.value) })),
       synced: relativeRu(sync?.lastSyncedAt ?? null),
     };

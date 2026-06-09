@@ -204,6 +204,20 @@ model FxRate {
   fetchedAt DateTime @default(now())
 }
 
+/// CoinLink accounts payable (кредиторская задолженность) — synced from the
+/// external read-only `coinlink_payable` view. Singleton: one current figure
+/// plus a per-partner breakdown. Subtracted from the company "available to
+/// withdraw" total. `periodFrom` records the lower bound of the synced window
+/// (Feb 1 of the current year); the upper bound is the sync moment.
+model CoinlinkPayable {
+  id         String    @id @default("default")
+  totalUsdt  Decimal   @default(0) @db.Decimal(18, 2)
+  partners   Json? // [{ partner, debt }] sorted by debt desc
+  periodFrom DateTime? // lower bound of the synced window
+  lastSyncedAt DateTime?
+  ok         Boolean   @default(true)
+}
+
 /// Cursor for the Telegram agency-balances integration. Stores the
 /// getUpdates offset (last processed update_id) so messages from the chat
 /// aren't reprocessed, plus diagnostics about the last consumed report.
