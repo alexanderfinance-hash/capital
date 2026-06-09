@@ -38,3 +38,11 @@ jobs:
             docker ps --filter "name=capital-worker-1" --format '{{.Names}}: {{.Status}}' || echo "worker: контейнер не найден"
             echo "=== worker: последние строки автосинка ==="
             docker logs --tail 25 capital-worker-1 2>&1 | tail -25 || echo "worker: логи недоступны"
+            # Telegram-синк: ищем его строки в логах и делаем пробный вызов сейчас,
+            # чтобы увидеть ответ (consumed/updated/created + распознанные агентства).
+            echo "=== telegram: строки синка в логах воркера ==="
+            docker logs --tail 300 capital-worker-1 2>&1 | grep "/api/sync/telegram" | tail -3 || echo "нет строк telegram в логах"
+            echo "=== telegram: пробный синк сейчас ==="
+            CRON=$(grep -E "^CRON_SECRET=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)
+            curl -s -m 30 -X POST -H "x-cron-key: $CRON" http://127.0.0.1:3000/api/sync/telegram | head -c 800 || echo "telegram: запрос не выполнен"
+            echo
