@@ -51,3 +51,8 @@ jobs:
             echo "=== telegram: связь app → api.telegram.org ==="
             docker exec capital-app-1 sh -c 'getent hosts api.telegram.org >/dev/null 2>&1 && echo "DNS: ок" || echo "DNS: НЕ резолвится"' 2>/dev/null || echo "app: контейнер недоступен"
             docker exec capital-app-1 node -e 'fetch("https://api.telegram.org",{signal:AbortSignal.timeout(10000)}).then(r=>console.log("HTTP:",r.status)).catch(e=>console.log("FAIL:",String(e&&e.cause||e).slice(0,80)))' 2>/dev/null || echo "app → telegram: проба не выполнена"
+            # Результат в БД: время последнего telegram-синка + свежие агентства
+            # (так видно, дошёл ли webhook и обновились ли балансы).
+            echo "=== telegram: состояние в БД ==="
+            docker exec capital-db-1 psql -U capital -d capital -t -A -F' | ' -c "SELECT 'telegram sync: '||COALESCE(to_char(\"lastSyncedAt\",'YYYY-MM-DD HH24:MI'),'—') FROM \"SyncState\" WHERE source='telegram';" 2>/dev/null || echo "sync state: недоступно"
+            docker exec capital-db-1 psql -U capital -d capital -t -A -F' | ' -c "SELECT platform, balance, to_char(\"updatedAt\",'MM-DD HH24:MI'), \"enteredBy\" FROM \"Agency\" ORDER BY \"updatedAt\" DESC LIMIT 6;" 2>/dev/null || echo "agencies: недоступно"
