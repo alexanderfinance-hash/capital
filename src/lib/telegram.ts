@@ -16,6 +16,18 @@ export function telegramChatId(): string | null {
   return (process.env.TELEGRAM_CHAT_ID || "").trim() || null;
 }
 
+/** Secret token Telegram echoes in the X-Telegram-Bot-Api-Secret-Token header
+ *  on webhook deliveries; also the switch that puts us in webhook mode. */
+export function webhookSecret(): string | null {
+  return (process.env.TELEGRAM_WEBHOOK_SECRET || "").trim() || null;
+}
+
+/** Webhook mode is on when a webhook secret is configured (used instead of
+ *  getUpdates polling, e.g. when outbound to api.telegram.org is blocked). */
+export function webhookEnabled(): boolean {
+  return !!webhookSecret();
+}
+
 export interface TgUser {
   id: number;
   first_name?: string;

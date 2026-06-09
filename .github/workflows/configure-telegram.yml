@@ -25,11 +25,12 @@ jobs:
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_HOOK: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: TG_TOKEN,TG_CHAT
+          envs: TG_TOKEN,TG_CHAT,TG_HOOK
           script_stop: true
           script: |
             set -e
@@ -39,11 +40,12 @@ jobs:
             fi
             touch .env
             # Убрать прежние строки TELEGRAM_* и дописать свежие (идемпотентно).
-            grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID)=' .env > .env.tmp 2>/dev/null || true
+            grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|TELEGRAM_WEBHOOK_SECRET)=' .env > .env.tmp 2>/dev/null || true
             mv .env.tmp .env
             printf 'TELEGRAM_BOT_TOKEN="%s"\n' "$TG_TOKEN" >> .env
             printf 'TELEGRAM_CHAT_ID="%s"\n' "$TG_CHAT" >> .env
-            echo "→ .env обновлён (TELEGRAM_BOT_TOKEN: задан; TELEGRAM_CHAT_ID: ${TG_CHAT:+задан}${TG_CHAT:-пуст})"
+            [ -n "$TG_HOOK" ] && printf 'TELEGRAM_WEBHOOK_SECRET="%s"\n' "$TG_HOOK" >> .env
+            echo "→ .env обновлён (TELEGRAM_BOT_TOKEN: задан; TELEGRAM_CHAT_ID: ${TG_CHAT:+задан}${TG_CHAT:-пуст}; TELEGRAM_WEBHOOK_SECRET: ${TG_HOOK:+задан}${TG_HOOK:-пуст})"
             # Пересоздать контейнеры с новым окружением.
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
             echo "→ Контейнеры перезапущены. Воркер дёрнет /api/sync/telegram по расписанию."
