@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { DEFAULT_RESERVES } from "./mockData";
-import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow, SnapshotPoint } from "./types";
+import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow, SnapshotPoint, CompanyPayable } from "./types";
 
 export type CompanyLayout = "dash" | "calc" | "report";
 export interface OpenGroups {
@@ -16,6 +16,7 @@ export interface CompanyComputed {
   walletsTotal: number;
   agenciesTotal: number;
   salaryReserve: number;
+  payable: number; // кредиторская задолженность CoinLink
   total: number;
   available: number;
 }
@@ -48,6 +49,7 @@ interface AppState {
   setAgencyBalance: (id: string, balance: number) => void;
   addAgency: (a: { platform: string; name: string; balance: number; by: string }) => void;
   deleteAgency: (id: string) => void;
+  payable: CompanyPayable;
   open: OpenGroups;
   toggleOpen: (k: keyof OpenGroups) => void;
   editing: string | null;
@@ -105,6 +107,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const [reserves, setReserves] = useState<Reserves>(initial.company.reserves);
   const [agencies, setAgencies] = useState<Agency[]>(initial.company.agencies.map((a) => ({ ...a })));
   const [wallets, setWallets] = useState<Wallet[]>(initial.company.wallets.map((w) => ({ ...w })));
+  const [payable] = useState<CompanyPayable>({ ...initial.company.payable, partners: initial.company.payable.partners.map((p) => ({ ...p })) });
   const [history] = useState<HistoryPoint[]>(initial.company.history.map((h) => ({ ...h })));
   const [open, setOpen] = useState<OpenGroups>({ clean: true, dirtyMain: false, dirtySmall: false, agencies: false });
   const [editing, setEditing] = useState<string | null>(null);
@@ -283,10 +286,11 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const compute = useCallback((): CompanyComputed => {
     const agenciesTotal = agencies.reduce((s, a) => s + a.balance, 0);
     const salaryReserve = reserves.salaryWeekly * reserves.salaryWeeks;
+    const payableTotal = payable.total;
     const total = walletsTotal + agenciesTotal;
-    const available = total - salaryReserve - reserves.tech;
-    return { walletsTotal, agenciesTotal, salaryReserve, total, available };
-  }, [agencies, reserves, walletsTotal]);
+    const available = total - salaryReserve - reserves.tech - payableTotal;
+    return { walletsTotal, agenciesTotal, salaryReserve, payable: payableTotal, total, available };
+  }, [agencies, reserves, walletsTotal, payable.total]);
 
   const value: AppState = {
     store,
@@ -313,6 +317,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     setAgencyBalance,
     addAgency,
     deleteAgency,
+    payable,
     open,
     toggleOpen,
     editing,

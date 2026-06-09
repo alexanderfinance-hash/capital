@@ -19,8 +19,9 @@ function Waterfall({ c, tech }: { c: CompanyComputed; tech: number }) {
     { label: "Рекламные агентства", value: c.agenciesTotal, kind: "add" as const },
     { label: "Резерв на зарплаты", value: -c.salaryReserve, kind: "sub" as const },
     { label: "Резерв на тех. расходы", value: -tech, kind: "sub" as const },
+    ...(c.payable > 0 ? [{ label: "Кредиторка CoinLink", value: -c.payable, kind: "sub" as const }] : []),
   ];
-  const scaleMax = Math.max(c.walletsTotal, c.agenciesTotal, c.salaryReserve, tech, c.available) || 1;
+  const scaleMax = Math.max(c.walletsTotal, c.agenciesTotal, c.salaryReserve, tech, c.payable, c.available) || 1;
   return (
     <>
       {rows.map((r, i) => (
@@ -276,7 +277,7 @@ function HeroPair({ c }: { c: CompanyComputed }) {
           {money(c.available)}
         </div>
         <div className="h-sub" style={{ marginTop: 6 }}>
-          после резервов на зарплаты и тех. расходы
+          после резервов{c.payable > 0 ? " и кредиторки CoinLink" : " на зарплаты и тех. расходы"}
         </div>
       </div>
       <div style={{ padding: 24 }}>
@@ -293,7 +294,7 @@ function HeroPair({ c }: { c: CompanyComputed }) {
 }
 
 function KpiStrip({ c }: { c: CompanyComputed }) {
-  const { reserves, agencies, wallets } = useApp();
+  const { reserves, agencies, wallets, payable } = useApp();
   const Kpi = ({ label, value, sub, muted }: { label: string; value: number; sub: string; muted?: boolean }) => (
     <div className={`card cat${muted ? " flat" : ""}`} style={{ gap: 8 }}>
       <div className="lab">{label}</div>
@@ -305,8 +306,9 @@ function KpiStrip({ c }: { c: CompanyComputed }) {
       </div>
     </div>
   );
+  const cols = c.payable > 0 ? 5 : 4;
   return (
-    <div className="grid-4col" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+    <div className="grid-4col" style={{ display: "grid", gridTemplateColumns: `repeat(${cols},1fr)`, gap: 16 }}>
       <Kpi label="Кошельки USDT" value={c.walletsTotal} sub={wallets.length + " кошельков"} />
       <Kpi label="Агентства" value={c.agenciesTotal} sub={agencies.length + " агентств"} />
       <div className="card cat flat" style={{ gap: 8 }}>
@@ -327,6 +329,17 @@ function KpiStrip({ c }: { c: CompanyComputed }) {
           ежемесячно
         </div>
       </div>
+      {c.payable > 0 && (
+        <div className="card cat flat" style={{ gap: 8 }}>
+          <div className="lab">Кредиторка CoinLink</div>
+          <div className="val" style={{ color: "var(--neg)" }}>
+            {money(c.payable)}
+          </div>
+          <div className="k" style={{ fontSize: 9.5 }}>
+            {payable.partners.length ? payable.partners.length + " партнёров · с 1 фев" : "с 1 фев"}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -391,6 +404,61 @@ function AgenciesCard({ c }: { c: CompanyComputed }) {
   );
 }
 
+/* ---------- CoinLink payable (кредиторская задолженность) ---------- */
+function PayableCard({ c }: { c: CompanyComputed }) {
+  const { payable } = useApp();
+  const [open, setOpen] = useState(false);
+  const stale = payable.staleDays >= 1;
+  // Hide entirely until CoinLink has been synced at least once (avoids an empty
+  // card on a fresh deploy / mock fallback).
+  if (c.payable <= 0 && payable.staleDays < 0) return null;
+  return (
+    <div className="card" style={{ padding: "6px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 4px 8px" }}>
+        <div>
+          <span className="k">Кредиторская задолженность CoinLink</span>
+          <div className="h-sub" style={{ marginTop: 3 }}>
+            вычитается из «доступно к выводу» · период с 1 февраля
+          </div>
+        </div>
+        <span className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--neg)" }}>
+          −{money(c.payable)}
+        </span>
+      </div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "11px 4px", background: "none", border: "none", borderTop: "1px solid var(--hair)", cursor: "pointer", fontFamily: "var(--sans)", textAlign: "left" }}
+      >
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: stale ? "var(--neg)" : "var(--sync)", flex: "none" }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>По партнёрам</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>
+            {payable.partners.length} партнёров · из БД CoinLink · обновлено {payable.synced}
+          </div>
+        </div>
+        <span style={{ color: "var(--faint)", transform: `rotate(${open ? 90 : 0}deg)`, fontSize: 15 }}>›</span>
+      </button>
+      {open && (
+        <div style={{ padding: "2px 0 10px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "6px 4px", fontSize: 10, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--faint)", fontWeight: 600 }}>
+            <span>Партнёр</span>
+            <span style={{ textAlign: "right" }}>Долг</span>
+          </div>
+          {payable.partners.map((p, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "9px 4px", borderTop: "1px solid var(--hair-2)", alignItems: "center" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 500 }}>{p.partner}</span>
+              <span className="mono" style={{ fontSize: 13, fontWeight: 500, textAlign: "right" }}>
+                {money(p.debt)}
+              </span>
+            </div>
+          ))}
+          {payable.partners.length === 0 && <div style={{ fontSize: 11, color: "var(--muted)", padding: "10px 4px" }}>Нет открытой кредиторки за период.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResetBtn() {
   const { resetReserves } = useApp();
   return (
@@ -447,6 +515,7 @@ function LayoutDash({ c, tech }: { c: CompanyComputed; tech: number }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <WalletsCard c={c} />
           <AgenciesCard c={c} />
+          <PayableCard c={c} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <ReservesCard c={c} />
@@ -488,6 +557,7 @@ function LayoutCalc({ c, tech }: { c: CompanyComputed; tech: number }) {
         <ChartCard c={c} />
         <WalletsCard c={c} />
         <AgenciesCard c={c} />
+        <PayableCard c={c} />
       </div>
     </div>
   );
@@ -519,6 +589,12 @@ function LayoutReport({ c, tech }: { c: CompanyComputed; tech: number }) {
           <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{money(c.salaryReserve)}</span> зарплаты
           <span className="mono" style={{ color: "var(--neg)", fontWeight: 600 }}>−</span>
           <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{money(tech)}</span> тех. расходы
+          {c.payable > 0 && (
+            <>
+              <span className="mono" style={{ color: "var(--neg)", fontWeight: 600 }}>−</span>
+              <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{money(c.payable)}</span> кредиторка CoinLink
+            </>
+          )}
         </div>
       </div>
       <div className="card" style={{ padding: 22 }}>
@@ -535,6 +611,7 @@ function LayoutReport({ c, tech }: { c: CompanyComputed; tech: number }) {
       </div>
       <WalletsCard c={c} />
       <AgenciesCard c={c} />
+      <PayableCard c={c} />
       <ChartCard c={c} />
     </div>
   );

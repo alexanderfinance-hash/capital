@@ -129,6 +129,19 @@ export interface Reserves {
   tech: number;
 }
 
+/** CoinLink accounts payable (кредиторская задолженность), synced from the
+ *  external `coinlink_payable` view. Subtracted from "available to withdraw". */
+export interface CoinlinkPayablePartner {
+  partner: string;
+  debt: number;
+}
+export interface CompanyPayable {
+  total: number;
+  partners: CoinlinkPayablePartner[];
+  synced: string;
+  staleDays: number; // -1 = ни разу не синхронизирован
+}
+
 /* ---- Shapes passed from server → client store ---- */
 export interface PersonalData {
   assets: Asset[];
@@ -150,6 +163,7 @@ export interface CompanyData {
   wallets: Wallet[];
   agencies: Agency[];
   reserves: Reserves;
+  payable: CompanyPayable;
   history: HistoryPoint[];
   synced: string;
 }
