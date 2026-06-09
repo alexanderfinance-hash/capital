@@ -97,6 +97,39 @@ GitHub) или вручную по SSH.
 > Важно: на боте **не должен** быть установлен webhook — иначе `getUpdates`
 > вернёт ошибку 409. Снять: `curl "https://api.telegram.org/bot<ТОКЕН>/deleteWebhook"`.
 
+## Режим webhook (когда с сервера нет доступа к Telegram)
+
+Если сервер **не может обращаться** к `api.telegram.org` (исходящие к Telegram
+блокируются дата-центром — симптом: синк отвечает `fetch failed`, проба связи
+даёт таймаут), поллинг `getUpdates` работать не будет. Тогда используем webhook:
+Telegram сам пушит сообщения на наш сервер.
+
+> ⚠️ Сработает только если **входящие** от Telegram на ваш домен:443 проходят.
+> Если фильтрация двусторонняя — нужен прокси или смена региона VPS.
+
+Шаги:
+
+1. **Секрет.** Придумайте длинную случайную строку (например, `openssl rand -hex 32`).
+2. **Пропишите секрет на сервере.** Без SSH: GitHub → Settings → Secrets →
+   добавьте `TELEGRAM_WEBHOOK_SECRET`, затем Actions → **Configure Telegram → Run**
+   (workflow допишет его в `.env` и перезапустит контейнеры). Или вручную в `.env`.
+3. **Зарегистрируйте webhook из браузера** (с сети, где Telegram доступен —
+   `setWebhook` это исходящий запрос, с самого VPS он не пройдёт). Откройте,
+   подставив токен, домен и секрет:
+   ```
+   https://api.telegram.org/bot<ТОКЕН>/setWebhook?url=https://<ВАШ_ДОМЕН>/api/telegram/webhook&secret_token=<СЕКРЕТ>&allowed_updates=["message","channel_post","edited_message","edited_channel_post"]
+   ```
+   Ответ `{"ok":true,...}` = webhook принят.
+4. **Проверка.** `https://api.telegram.org/bot<ТОКЕН>/getWebhookInfo` — покажет
+   `url`, `pending_update_count` и `last_error_message`. Если Telegram не может
+   достучаться до сервера — здесь будет ошибка (значит входящие тоже режутся).
+5. После этого сотрудник публикует отчёт → Telegram пушит на
+   `/api/telegram/webhook` → агентства обновляются. Эндпоинт защищён секретом
+   (заголовок `X-Telegram-Bot-Api-Secret-Token`).
+
+Снять webhook (вернуться к поллингу): убрать `TELEGRAM_WEBHOOK_SECRET` и открыть
+`https://api.telegram.org/bot<ТОКЕН>/deleteWebhook`.
+
 ## Переменные окружения
 
 | Переменная | Назначение | По умолчанию |
@@ -105,7 +138,8 @@ GitHub) или вручную по SSH.
 | `TELEGRAM_CHAT_ID` | Ограничить обработку одним чатом (рекомендуется) | все чаты |
 | `TELEGRAM_REPORT_MARKER` | Regex-маркер сообщения-отчёта | `остат\|баланс\|агентств` |
 | `TELEGRAM_AGENCY_AUTOCREATE` | Создавать неизвестные агентства | `true` |
-| `SYNC_TELEGRAM_CRON` | Расписание воркера | `*/15 * * * *` |
+| `TELEGRAM_WEBHOOK_SECRET` | Секрет webhook; включает режим webhook (поллинг off) | — |
+| `SYNC_TELEGRAM_CRON` | Расписание воркера (поллинг) | `*/15 * * * *` |
 
 ## Диагностика
 
