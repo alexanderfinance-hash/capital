@@ -27,11 +27,19 @@ export interface TgChat {
   title?: string;
   type?: string;
 }
+/** Rich-text markup span (bold/italic/…). Offsets are UTF-16 code units. */
+export interface TgEntity {
+  type: string;
+  offset: number;
+  length: number;
+}
 export interface TgMessage {
   message_id: number;
   date: number; // unix seconds
   text?: string;
   caption?: string;
+  entities?: TgEntity[];
+  caption_entities?: TgEntity[];
   from?: TgUser;
   sender_chat?: TgChat;
   chat: TgChat;
