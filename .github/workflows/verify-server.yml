@@ -46,3 +46,8 @@ jobs:
             CRON=$(grep -E "^CRON_SECRET=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)
             curl -s -m 30 -X POST -H "x-cron-key: $CRON" http://127.0.0.1:3000/api/sync/telegram | head -c 800 || echo "telegram: запрос не выполнен"
             echo
+            # Сетевая проба до Telegram ИЗ контейнера app (тот же путь, что у синка):
+            # DNS + HTTP-код. Любой код (404/200) = связь есть; FAIL = недоступно.
+            echo "=== telegram: связь app → api.telegram.org ==="
+            docker exec capital-app-1 sh -c 'getent hosts api.telegram.org >/dev/null 2>&1 && echo "DNS: ок" || echo "DNS: НЕ резолвится"' 2>/dev/null || echo "app: контейнер недоступен"
+            docker exec capital-app-1 node -e 'fetch("https://api.telegram.org",{signal:AbortSignal.timeout(10000)}).then(r=>console.log("HTTP:",r.status)).catch(e=>console.log("FAIL:",String(e&&e.cause||e).slice(0,80)))' 2>/dev/null || echo "app → telegram: проба не выполнена"
