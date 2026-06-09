@@ -15,7 +15,7 @@
 import "server-only";
 import { prisma } from "../prisma";
 import { getUpdates, telegramChatId, senderLabel, type TgMessage, type TgUpdate } from "../telegram";
-import { parseLine, isReport, normName as norm } from "./telegram-parse";
+import { parseReport, isReport, normName as norm } from "./telegram-parse";
 
 export interface TelegramSyncResult {
   consumed: number; // updates consumed from getUpdates
@@ -62,16 +62,7 @@ export async function syncTelegramAgencies(): Promise<TelegramSyncResult> {
   if (report) {
     const by = senderLabel(report);
     const text = report.text || report.caption || "";
-    const parsed: { name: string; amount: number }[] = [];
-    const seen = new Set<string>();
-    for (const line of text.split(/\r?\n/)) {
-      const e = parseLine(line);
-      if (!e) continue;
-      const key = norm(e.name);
-      if (seen.has(key)) continue; // first occurrence wins
-      seen.add(key);
-      parsed.push(e);
-    }
+    const parsed = parseReport(text);
 
     await prisma.$transaction(async (tx) => {
       const agencies = await tx.agency.findMany();
