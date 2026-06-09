@@ -191,7 +191,7 @@ export async function getCompanyData(): Promise<CompanyData> {
       wallets,
       agencies,
       reserves: reserve
-        ? { salaryWeekly: reserve.salaryWeekly, salaryWeeks: reserve.salaryWeeks, tech: reserve.tech }
+        ? { salaryWeekly: reserve.salaryWeekly, salaryWeeks: reserve.salaryWeeks, tech: reserve.tech, agencyReserve: reserve.agencyReserve }
         : { ...DEFAULT_RESERVES },
       payable: {
         total: payableRow ? num(payableRow.totalUsdt) : 0,

@@ -127,6 +127,7 @@ export interface Reserves {
   salaryWeekly: number;
   salaryWeeks: number;
   tech: number;
+  agencyReserve: number; // резерв на рекламные агентства
 }
 
 /** CoinLink accounts payable (кредиторская задолженность), synced from the

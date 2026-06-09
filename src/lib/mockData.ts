@@ -108,4 +108,4 @@ export const HISTORY: HistoryPoint[] = [
   { week: "12 мая", value: 1235000 }, { week: "19 мая", value: 1258000 }, { week: "26 мая", value: 1271715 },
 ];
 
-export const DEFAULT_RESERVES: Reserves = { salaryWeekly: 24000, salaryWeeks: 4, tech: 35000 };
+export const DEFAULT_RESERVES: Reserves = { salaryWeekly: 24000, salaryWeeks: 4, tech: 35000, agencyReserve: 0 };

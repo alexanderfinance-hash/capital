@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export async function PUT(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { salaryWeekly?: number; salaryWeeks?: number; tech?: number } = {};
+  let b: { salaryWeekly?: number; salaryWeeks?: number; tech?: number; agencyReserve?: number } = {};
   try {
     b = await req.json();
   } catch {
@@ -16,12 +16,13 @@ export async function PUT(req: Request) {
   const salaryWeekly = Math.max(0, Math.round(Number(b.salaryWeekly) || 0));
   const salaryWeeks = Math.max(0, Math.round(Number(b.salaryWeeks) || 0));
   const tech = Math.max(0, Math.round(Number(b.tech) || 0));
+  const agencyReserve = Math.max(0, Math.round(Number(b.agencyReserve) || 0));
 
   try {
     await prisma.reserve.upsert({
       where: { id: "default" },
-      update: { salaryWeekly, salaryWeeks, tech },
-      create: { id: "default", salaryWeekly, salaryWeeks, tech },
+      update: { salaryWeekly, salaryWeeks, tech, agencyReserve },
+      create: { id: "default", salaryWeekly, salaryWeeks, tech, agencyReserve },
     });
     return NextResponse.json({ ok: true });
   } catch {
