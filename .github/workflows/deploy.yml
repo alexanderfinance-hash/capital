@@ -7,6 +7,11 @@ name: Deploy to VPS
 on:
   push:
     branches: [claude/dreamy-johnson-pUcCJ]
+    # Изменения только в CI-воркфлоу и документации не требуют пересборки/
+    # передеплоя контейнеров (воркфлоу читаются раннером сами).
+    paths-ignore:
+      - ".github/**"
+      - "**/*.md"
   workflow_dispatch: {}
 
 # Не запускать два деплоя одновременно.
