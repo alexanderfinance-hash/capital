@@ -1,0 +1,82 @@
+name: Configure WireGuard (Telegram split-tunnel)
+
+# Поднимает ваш WireGuard на VPS в режиме split-tunnel: через туннель идёт
+# ТОЛЬКО трафик к адресам Telegram, остальное (дашборд, БД) — как раньше.
+# Затем убирает webhook и возвращает бота на поллинг (getUpdates через VPN).
+# Конфиг берётся из секрета WG_CONFIG (полный текст вашего .conf).
+#
+# Запуск: Actions → Configure WireGuard (Telegram split-tunnel) → Run workflow.
+# Предусловия: секреты VPS_* и WG_CONFIG, переменная DEPLOY_ENABLED=true,
+# SSH-пользователь с правами root/sudo (нужно поднять VPN на хосте).
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Encode WG config (avoid multiline env issues)
+        env:
+          WG_CONFIG: ${{ secrets.WG_CONFIG }}
+        run: |
+          if [ -z "$WG_CONFIG" ]; then echo "Секрет WG_CONFIG пуст"; exit 1; fi
+          echo "WG_B64=$(printf '%s' "$WG_CONFIG" | base64 -w0)" >> "$GITHUB_ENV"
+
+      - name: Bring up split-tunnel over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          WG_B64: ${{ env.WG_B64 }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: WG_B64
+          script_stop: false
+          command_timeout: 10m
+          script: |
+            set -e
+            cd "$HOME/capital" || { echo "Нет каталога ~/capital"; exit 1; }
+            SUDO=''; [ "$(id -u)" -ne 0 ] && SUDO=sudo
+
+            # 1) wireguard-tools
+            if ! command -v wg-quick >/dev/null 2>&1; then
+              echo "→ устанавливаю wireguard-tools"
+              $SUDO apt-get update -qq || true
+              $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq wireguard-tools \
+                || $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq wireguard \
+                || { echo "✗ не удалось установить wireguard (нужен root/sudo)"; exit 1; }
+            fi
+
+            # 2) конфиг: split-tunnel только на адреса Telegram, без DNS-строки
+            TG_CIDRS="149.154.160.0/20,149.154.164.0/22,149.154.168.0/22,149.154.172.0/22,91.108.4.0/22,91.108.8.0/22,91.108.12.0/22,91.108.16.0/22,91.108.56.0/22,95.161.64.0/20"
+            $SUDO mkdir -p /etc/wireguard
+            echo "$WG_B64" | base64 -d | $SUDO tee /etc/wireguard/tgwg.conf >/dev/null
+            $SUDO sed -i '/^[[:space:]]*DNS[[:space:]]*=/d' /etc/wireguard/tgwg.conf
+            $SUDO sed -i "s|^[[:space:]]*AllowedIPs[[:space:]]*=.*|AllowedIPs = ${TG_CIDRS}|" /etc/wireguard/tgwg.conf
+            $SUDO chmod 600 /etc/wireguard/tgwg.conf
+
+            # 3) поднять (идемпотентно) + автозапуск
+            $SUDO wg-quick down tgwg 2>/dev/null || true
+            $SUDO wg-quick up tgwg || { echo "✗ wg-quick up не удался"; exit 1; }
+            $SUDO systemctl enable wg-quick@tgwg 2>/dev/null || true
+            echo "→ WireGuard tgwg поднят (split-tunnel: только Telegram)"
+
+            # 4) проверка связи с хоста (Telegram теперь через VPN)
+            code=$($SUDO curl -s -o /dev/null -m 15 -w "%{http_code}" https://api.telegram.org 2>/dev/null || echo fail)
+            echo "host → api.telegram.org: $code  (код 200/404 = связь есть; fail/000 = нет)"
+
+            # 5) вернуть бота на поллинг: снять webhook, убрать webhook-секрет, рестарт
+            TOKEN=$(grep -E '^TELEGRAM_BOT_TOKEN=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)
+            if [ -n "$TOKEN" ]; then
+              echo -n "deleteWebhook: "; curl -s -m 15 "https://api.telegram.org/bot$TOKEN/deleteWebhook" | head -c 200; echo
+            fi
+            grep -vE '^(TELEGRAM_WEBHOOK_SECRET|TELEGRAM_PROXY)=' .env > .env.tmp 2>/dev/null || true
+            mv .env.tmp .env
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d app worker >/dev/null 2>&1 || \
+              docker compose up -d app worker >/dev/null 2>&1 || true
+            echo "→ webhook снят, приложение на поллинге (getUpdates через VPN), контейнеры перезапущены"
