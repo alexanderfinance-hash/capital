@@ -1,12 +1,19 @@
 /* Read-only access to the external CoinLink Postgres (the `coinlink_payable`
- * view). This is a SEPARATE database from the app's own Postgres — connection
- * details come from COINLINK_* env vars and are never committed. Used only by
- * the CoinLink payable sync. */
+ * view + helper functions). This is a SEPARATE database from the app's own
+ * Postgres — connection details come from COINLINK_* env vars and are never
+ * committed. Used only by the CoinLink payable sync.
+ *
+ * The figure is taken from the database's OWN functions so it matches the BI
+ * dashboard «ЦУ Payments» → «Кредиторская задолженность» exactly (computing it
+ * by hand from the raw view did not reproduce the BI total):
+ *   coinlink_payable_total(from, to)       -> one number
+ *   coinlink_payable_by_partner(from, to)  -> rows (partner, debt)
+ * The second date is EXCLUSIVE (BI convention: from <= report_date < to). */
 import "server-only";
 import { Pool, type PoolConfig } from "pg";
 
-/** Identifiers (view/column names) can't be passed as query parameters, so
- *  they're interpolated. Allow only plain SQL identifiers to keep that safe. */
+/** Function names are interpolated (can't be query params), so allow only
+ *  plain SQL identifiers to keep that safe. */
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function ident(name: string, fallback: string): string {
   const v = (name || "").trim();
@@ -15,8 +22,8 @@ function ident(name: string, fallback: string): string {
   return v;
 }
 
-export const PAYABLE_VIEW = () => ident(process.env.COINLINK_PAYABLE_VIEW || "", "coinlink_payable");
-export const DATE_COLUMN = () => ident(process.env.COINLINK_DATE_COLUMN || "", "report_date");
+export const TOTAL_FN = () => ident(process.env.COINLINK_TOTAL_FN || "", "coinlink_payable_total");
+export const BY_PARTNER_FN = () => ident(process.env.COINLINK_BY_PARTNER_FN || "", "coinlink_payable_by_partner");
 
 /** Lower bound of the synced window: Feb 1 of the current year (per spec —
  *  "с 1 февраля текущего года"). Overridable with COINLINK_PERIOD_FROM (ISO). */
@@ -67,32 +74,40 @@ export interface PayableResult {
   to: Date;
 }
 
-/** Pull the current outstanding CoinLink payable for [Feb 1 of this year, today].
- *  Mirrors the BI «ЦУ Payments» → «Кредиторская задолженность» figure, restricted
- *  to the period window. Both bounds cast to ::date so the column may be date or
- *  timestamp. */
+const isNumericStr = (v: unknown): boolean => v != null && /^-?\d+(\.\d+)?$/.test(String(v).trim());
+
+/** Map a by-partner row to {partner, debt} without assuming exact column names:
+ *  the first non-numeric column is the partner, a numeric column (preferring a
+ *  debt-like name) is the amount. */
+function mapPartnerRow(r: Record<string, unknown>): PayableRow {
+  const keys = Object.keys(r);
+  const partnerKey = keys.find((k) => !isNumericStr(r[k])) ?? keys[0];
+  const debtKey =
+    keys.find((k) => k !== partnerKey && /payout|payable|debt|usdt|total|amount|cred|кредит|сумм|долг/i.test(k) && isNumericStr(r[k])) ??
+    keys.find((k) => k !== partnerKey && isNumericStr(r[k])) ??
+    keys[keys.length - 1];
+  return { partner: String(r[partnerKey] ?? "—"), debt: Number(r[debtKey]) || 0 };
+}
+
+/** Pull the CoinLink payable for [Feb 1 of this year, today) via the DB's own
+ *  functions, so it matches BI «ЦУ Payments» → «Кредиторская задолженность». */
 export async function fetchPayable(): Promise<PayableResult> {
-  const view = PAYABLE_VIEW();
-  const dateCol = DATE_COLUMN();
+  const totalFn = TOTAL_FN();
+  const byPartnerFn = BY_PARTNER_FN();
   const from = periodFrom();
-  const to = new Date();
+  const to = new Date(); // exclusive upper bound (BI: from <= report_date < to)
   const fromISO = from.toISOString().slice(0, 10);
   const toISO = to.toISOString().slice(0, 10);
 
-  const sql = `
-    SELECT partner, COALESCE(SUM(payout_usdt), 0)::numeric AS debt
-    FROM ${view}
-    WHERE is_outstanding
-      AND ${dateCol}::date >= $1::date
-      AND ${dateCol}::date <= $2::date
-    GROUP BY partner
-    ORDER BY debt DESC`;
+  const pool = getPool();
+  const totalRes = await pool.query(`SELECT ${totalFn}($1::date, $2::date) AS total`, [fromISO, toISO]);
+  const total = Number(totalRes.rows[0]?.total) || 0;
 
-  const { rows } = await getPool().query(sql, [fromISO, toISO]);
-  const partners: PayableRow[] = rows.map((r: { partner: string | null; debt: string }) => ({
-    partner: r.partner ?? "—",
-    debt: Number(r.debt) || 0,
-  }));
-  const total = partners.reduce((s, p) => s + p.debt, 0);
+  const partnerRes = await pool.query(`SELECT * FROM ${byPartnerFn}($1::date, $2::date)`, [fromISO, toISO]);
+  const partners = partnerRes.rows
+    .map((r) => mapPartnerRow(r as Record<string, unknown>))
+    .filter((p) => p.debt !== 0)
+    .sort((a, b) => b.debt - a.debt);
+
   return { total, partners, from, to };
 }

@@ -58,7 +58,8 @@ services:
       COINLINK_DB_PASSWORD: "${COINLINK_DB_PASSWORD:-}"
       COINLINK_DB_SSL: "${COINLINK_DB_SSL:-}"
       COINLINK_PAYABLE_VIEW: "${COINLINK_PAYABLE_VIEW:-coinlink_payable}"
-      COINLINK_DATE_COLUMN: "${COINLINK_DATE_COLUMN:-report_date}"
+      COINLINK_TOTAL_FN: "${COINLINK_TOTAL_FN:-coinlink_payable_total}"
+      COINLINK_BY_PARTNER_FN: "${COINLINK_BY_PARTNER_FN:-coinlink_payable_by_partner}"
       COINLINK_PERIOD_FROM: "${COINLINK_PERIOD_FROM:-}"
       CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
       # Service-account key is mounted (below) rather than baked into the image.
