@@ -1,100 +1,64 @@
 /* TON anonymous-number unit price provider.
  *
- * The rate of one anonymous TON (+888) number = the market FLOOR price of the
- * "Anonymous Telegram Numbers" NFT collection on TON. Getgems is the canonical
- * TON NFT marketplace (the same data third-party trackers like nums888.io show),
- * and exposes collection stats over a public GraphQL API. We read the floor from
- * there and convert TON→USD with the TON spot price (CMC, same feed as crypto).
+ * Returns the live rate of one anonymous TON (+888) number in USD, scraped from
+ * nums888.io. That page is server-rendered with the current rate right in its
+ * <title> ("$2788.50 | Telegram Anonymous Numbers"), so we read the USD figure
+ * straight from there — no marketplace API, no TON→USD conversion.
  *
- * On a hard failure (network/HTTP error, floor missing) the fetcher THROWS so the
- * sync layer keeps the last known cached price instead of zeroing it (PRD §7).
- * Network access to api.getgems.io is required (open network; blocked in
- * restricted sandboxes).
+ * On a hard failure (network/HTTP error, price not found) the fetcher THROWS so
+ * the sync layer keeps the last known cached price instead of zeroing it
+ * (PRD §7). nums888.io must be reachable from the server (it is from the VPS;
+ * blocked in this sandbox).
  *
  * Configuration (all optional — sensible defaults if empty):
- *   TONNUM_PRICE_USD            hard override in USD per number (skips the network)
- *   TONNUM_COLLECTION_ADDRESS   TON collection address (default = Anonymous Numbers)
- *   GETGEMS_API_URL             GraphQL endpoint (default https://api.getgems.io/graphql)
+ *   TONNUM_PRICE_USD     hard override in USD per number (skips the network)
+ *   NUMS888_URL          page to read (default https://nums888.io/)
+ *   NUMS888_PRICE_REGEX  regex with ONE capture group for the USD figure
  */
 import "server-only";
 
 const TIMEOUT = 12000;
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
-// "Anonymous Telegram Numbers" collection on TON.
-const DEFAULT_COLLECTION = "EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N";
-
-// Getgems stats fields have used a couple of names over time; try each.
-const STAT_FIELDS = ["nftCollectionStats", "alphaNftCollectionStats"];
+// A dollar amount: "$2788.50", "$2,788.50", "$ 2788". Thousands separators
+// (comma / space / nbsp — \s covers nbsp) are stripped in parseNumber().
+const DEFAULT_PRICE_RE = /\$\s*([0-9][0-9.,\s]*)/;
 
 export interface TonNumberRate {
-  usd: number; // floor price of one number in USD
-  ton: number | null; // floor price in TON
-  change24h: number | null; // 24h floor change %, when known
-  source: string; // "override" | "getgems"
-  debug?: string; // short diagnostic (upstream shape/errors) for the debug endpoint
+  usd: number; // price of one anonymous number in USD
+  ton: number | null;
+  change24h: number | null;
+  source: string; // "override" | "nums888"
+  debug?: string;
 }
 
-/** Floor figures come back as TON or as nanoton (1e9). Normalise to TON. */
-function toTon(raw: unknown): number | null {
-  const n = Number(raw);
-  if (!isFinite(n) || n <= 0) return null;
-  return n > 1e6 ? n / 1e9 : n; // big number ⇒ nanoton
+function parseNumber(raw: string): number {
+  // Keep the decimal point; drop thousands separators (commas/spaces/nbsp).
+  const cleaned = raw.replace(/[,\s]/g, "").trim();
+  const n = Number(cleaned);
+  return isFinite(n) ? n : NaN;
 }
 
-async function queryGetgems(url: string, field: string, address: string): Promise<{ floorTon: number | null; body: string }> {
-  const query = `query($a:String!){ ${field}(address:$a){ floorPrice } }`;
+export async function fetchTonNumberRate(): Promise<TonNumberRate> {
+  // Manual pin: skip the network entirely.
+  const override = Number(process.env.TONNUM_PRICE_USD);
+  if (override > 0) return { usd: override, ton: null, change24h: null, source: "override" };
+
+  const url = process.env.NUMS888_URL || "https://nums888.io/";
   const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      // Browser-like headers: some marketplace edges reject bare requests.
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      Origin: "https://getgems.io",
-      Referer: "https://getgems.io/",
-    },
-    body: JSON.stringify({ query, variables: { a: address } }),
+    headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
     signal: AbortSignal.timeout(TIMEOUT),
   });
-  const text = await res.text();
-  if (!res.ok) return { floorTon: null, body: `HTTP ${res.status}: ${text.slice(0, 200)}` };
-  let j: any;
-  try {
-    j = JSON.parse(text);
-  } catch {
-    return { floorTon: null, body: `non-JSON: ${text.slice(0, 200)}` };
-  }
-  const floor = j?.data?.[field]?.floorPrice;
-  return { floorTon: toTon(floor), body: text.slice(0, 200) };
-}
+  if (!res.ok) throw new Error("nums888 " + res.status);
+  const body = await res.text();
 
-/** Fetch the current floor price of one anonymous TON number, in USD.
- *  `tonUsd` is the TON spot price, used to convert the TON-denominated floor. */
-export async function fetchTonNumberRate(tonUsd?: number): Promise<TonNumberRate> {
-  // Manual pin: skip the network entirely (useful if the API is unreachable).
-  const override = Number(process.env.TONNUM_PRICE_USD);
-  if (override > 0) return { usd: override, ton: tonUsd && tonUsd > 0 ? override / tonUsd : null, change24h: null, source: "override" };
+  const re = process.env.NUMS888_PRICE_REGEX ? new RegExp(process.env.NUMS888_PRICE_REGEX, "i") : DEFAULT_PRICE_RE;
+  // The <title> carries the headline rate; prefer it, then fall back to the body.
+  const title = body.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "";
+  const m = title.match(re) ?? body.match(re);
+  if (!m || !m[1]) throw new Error("nums888 price not found (title=" + JSON.stringify(title.slice(0, 80)) + ")");
+  const usd = parseNumber(m[1]);
+  if (!isFinite(usd) || usd <= 0) throw new Error("nums888 bad price: " + JSON.stringify(m[1]));
 
-  const url = process.env.GETGEMS_API_URL || "https://api.getgems.io/graphql";
-  const address = process.env.TONNUM_COLLECTION_ADDRESS || DEFAULT_COLLECTION;
-
-  const tries: string[] = [];
-  let floorTon: number | null = null;
-  for (const field of STAT_FIELDS) {
-    try {
-      const r = await queryGetgems(url, field, address);
-      tries.push(`${field}: ${r.floorTon != null ? r.floorTon + " TON" : r.body}`);
-      if (r.floorTon != null) {
-        floorTon = r.floorTon;
-        break;
-      }
-    } catch (e) {
-      tries.push(`${field}: ${String(e).slice(0, 120)}`);
-    }
-  }
-
-  if (floorTon == null) throw new Error("getgems floor not found · " + tries.join(" | "));
-  if (!tonUsd || tonUsd <= 0) throw new Error("no TON spot price for TON→USD conversion (floor=" + floorTon + " TON)");
-
-  return { usd: floorTon * tonUsd, ton: floorTon, change24h: null, source: "getgems", debug: tries.join(" | ") };
+  return { usd, ton: null, change24h: null, source: "nums888", debug: `title=${JSON.stringify(title.slice(0, 60))}` };
 }

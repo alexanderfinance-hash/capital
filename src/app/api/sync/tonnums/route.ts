@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { authorizeSync, getSession } from "@/lib/auth-server";
 import { syncTonNumbers } from "@/lib/sync/tonnums";
 import { fetchTonNumberRate } from "@/lib/tonnums/price";
-import { defaultProviders } from "@/lib/crypto/providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,15 +51,8 @@ export async function GET(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (new URL(req.url).searchParams.get("probe")) return probe();
   try {
-    let tonUsd: number | undefined;
-    try {
-      const prices = await defaultProviders.prices(["TON"]);
-      tonUsd = prices.get("TON")?.usd;
-    } catch {
-      /* report below */
-    }
-    const rate = await fetchTonNumberRate(tonUsd);
-    return NextResponse.json({ ok: true, tonUsd: tonUsd ?? null, ...rate });
+    const rate = await fetchTonNumberRate();
+    return NextResponse.json({ ok: true, ...rate });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 200 });
   }

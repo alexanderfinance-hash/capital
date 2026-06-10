@@ -72,8 +72,8 @@ export default function Assets() {
                           <>{" · "}курс подтянется при синхронизации</>
                         )}
                         {" · "}
-                        <a href="https://getgems.io/collection/EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N" target="_blank" rel="noreferrer" style={{ color: "var(--muted)" }}>
-                          флор
+                        <a href="https://nums888.io/" target="_blank" rel="noreferrer" style={{ color: "var(--muted)" }}>
+                          nums888.io
                         </a>
                         {tonNumberRate.staleDays >= 0 && <> · {tonNumberRate.synced}</>}
                       </span>
