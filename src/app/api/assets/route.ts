@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth-server";
 import { TONNUM_SYMBOL } from "@/lib/sync/tonnums";
+import { getCurrentUsdRub } from "@/lib/fx";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string } = {};
+  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string; currency?: string } = {};
   try {
     b = await req.json();
   } catch {
@@ -17,10 +18,12 @@ export async function POST(req: Request) {
 
   const isTonNumber = b.symbol === TONNUM_SYMBOL;
   const amount = b.amount == null ? null : Number(b.amount);
+  const currency = b.currency === "RUB" ? "RUB" : "USD";
 
   // TON numbers are quantity-driven: validate the count, then price it from the
   // last synced unit rate (the tonnums sync keeps it fresh afterwards).
-  let value = Number(b.value);
+  let value = Number(b.value); // the entered amount, in `currency`
+  let nativeValue: number | null = null;
   if (isTonNumber) {
     if (!amount || amount <= 0) return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
     try {
@@ -31,6 +34,15 @@ export async function POST(req: Request) {
     }
   } else if (!value || value <= 0) {
     return NextResponse.json({ error: "invalid_value" }, { status: 400 });
+  } else if (currency === "RUB") {
+    // Store the original RUB amount; value is shown in USD at the current CBR rate.
+    nativeValue = value;
+    try {
+      const rate = await getCurrentUsdRub();
+      value = rate > 0 ? Math.round(nativeValue / rate) : nativeValue;
+    } catch {
+      /* keep native as a placeholder; getPersonalData re-converts on read */
+    }
   }
 
   try {
@@ -42,6 +54,8 @@ export async function POST(req: Request) {
         delta: b.delta == null ? null : Number(b.delta),
         amount: amount == null || isNaN(amount) ? null : amount,
         symbol: b.symbol || null,
+        currency,
+        nativeValue,
         source: (b.src as "sync" | "sheets" | "manual") || "manual",
         bucket: (b.bucket as "crypto" | "vehicles" | "cash" | "other") || "other",
       },

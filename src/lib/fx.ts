@@ -57,3 +57,11 @@ export async function getUsdRubRates(dates: string[]): Promise<Map<string, numbe
 export function fallbackRate(): number {
   return FALLBACK();
 }
+
+/** Current USD→RUB rate (RUB per 1 USD): today's CBR rate, cached, with the
+ *  last-known / env fallback. Used to value RUB-denominated assets in USD. */
+export async function getCurrentUsdRub(): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10);
+  const rates = await getUsdRubRates([today]);
+  return rates.get(today) ?? fallbackRate();
+}

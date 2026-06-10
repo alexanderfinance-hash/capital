@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useApp } from "@/lib/store";
-import { fmt, fmtTonNumbers } from "@/lib/format";
+import { fmt, fmtTonNumbers, fmtRub } from "@/lib/format";
 import { Chip, Badge, Donut } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { Topbar } from "../ui";
@@ -76,6 +76,10 @@ export default function Assets() {
                           nums888.io
                         </a>
                         {tonNumberRate.staleDays >= 0 && <> · {tonNumberRate.synced}</>}
+                      </span>
+                    ) : a.currency === "RUB" && a.nativeValue != null ? (
+                      <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                        {fmtRub(a.nativeValue)} · по курсу ЦБ
                       </span>
                     ) : (
                       <Badge src={a.src} />
