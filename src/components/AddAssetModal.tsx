@@ -110,11 +110,11 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
           {c.tonNumber && (
             <div className="hint" style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
               <span>
-                Стоимость подтянется автоматически по курсу{" "}
-                <a href="https://nums888.io/" target="_blank" rel="noreferrer" style={{ color: "var(--ink-2)" }}>
-                  nums888.io
-                </a>
-                .
+                Стоимость подтянется автоматически по рыночному{" "}
+                <a href="https://getgems.io/collection/EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N" target="_blank" rel="noreferrer" style={{ color: "var(--ink-2)" }}>
+                  флору
+                </a>{" "}
+                коллекции Anonymous Telegram Numbers (TON).
               </span>
               {unit > 0 ? (
                 <span style={{ color: "var(--muted)" }}>

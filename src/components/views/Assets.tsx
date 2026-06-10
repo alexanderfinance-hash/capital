@@ -64,14 +64,16 @@ export default function Assets() {
                     {isTon ? (
                       <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
                         {fmtTonNumbers(a.amount ?? 0)}
-                        {tonNumberRate.usd > 0 && (
+                        {tonNumberRate.usd > 0 ? (
                           <>
                             {" · "}курс {fmt(tonNumberRate.usd)}/номер
                           </>
+                        ) : (
+                          <>{" · "}курс подтянется при синхронизации</>
                         )}
                         {" · "}
-                        <a href="https://nums888.io/" target="_blank" rel="noreferrer" style={{ color: "var(--muted)" }}>
-                          nums888.io
+                        <a href="https://getgems.io/collection/EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N" target="_blank" rel="noreferrer" style={{ color: "var(--muted)" }}>
+                          флор
                         </a>
                         {tonNumberRate.staleDays >= 0 && <> · {tonNumberRate.synced}</>}
                       </span>
