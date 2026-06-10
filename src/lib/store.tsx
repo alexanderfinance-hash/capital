@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { DEFAULT_RESERVES } from "./mockData";
-import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow, SnapshotPoint, CompanyPayable } from "./types";
+import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow, SnapshotPoint, CompanyPayable, TonNumberRate } from "./types";
 
 export type CompanyLayout = "dash" | "calc" | "report";
 export interface OpenGroups {
@@ -31,6 +31,8 @@ interface AppState {
   addAsset: (a: Omit<Asset, "id">) => void;
   addDividend: (d: Dividend) => void;
   deleteAsset: (id: string) => void;
+  setAssetAmount: (id: string, amount: number) => void;
+  tonNumberRate: TonNumberRate;
   personalWallets: PersonalWalletRow[];
   addPersonalWallet: (w: { address: string; chain: string; label: string }) => void;
   deletePersonalWallet: (id: string) => void;
@@ -104,6 +106,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const [personalWallets, setPersonalWallets] = useState<PersonalWalletRow[]>(initial.personal.personalWallets.map((w) => ({ ...w })));
   const [capitalHistory] = useState<SnapshotPoint[]>(initial.personal.capitalHistory.map((p) => ({ ...p })));
   const [cryptoHistory] = useState<SnapshotPoint[]>(initial.personal.cryptoHistory.map((p) => ({ ...p })));
+  const [tonNumberRate] = useState<TonNumberRate>({ ...initial.personal.tonNumberRate });
 
   const [reserves, setReserves] = useState<Reserves>(initial.company.reserves);
   const [agencies, setAgencies] = useState<Agency[]>(initial.company.agencies.map((a) => ({ ...a })));
@@ -133,8 +136,30 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     setStore((prev) => ({ ...prev, assets: [...prev.assets, { ...a, id: tempId }] }));
     api("POST", "/api/assets", a).then((res) => {
       if (res?.id) setStore((prev) => ({ ...prev, assets: prev.assets.map((x) => (x.id === tempId ? { ...x, id: res.id } : x)) }));
+      // TON numbers are auto-priced — kick a sync so the value (and rate badge)
+      // appear immediately, then reload to pick up the server-priced figures.
+      if (a.symbol === "TONNUM") {
+        fetch("/api/sync/tonnums", { method: "POST" })
+          .then((r) => r.json().catch(() => ({})))
+          .then((s) => {
+            if (s && s.ok) window.location.reload();
+          })
+          .catch(() => {});
+      }
     });
   }, []);
+
+  const setAssetAmount = useCallback(
+    (id: string, amount: number) => {
+      const unit = tonNumberRate.usd;
+      setStore((prev) => ({
+        ...prev,
+        assets: prev.assets.map((x) => (x.id === id ? { ...x, amount, value: unit > 0 ? Math.round(amount * unit) : x.value } : x)),
+      }));
+      api("PATCH", `/api/assets/${id}`, { amount });
+    },
+    [tonNumberRate.usd]
+  );
 
   const addDividend = useCallback((d: Dividend) => {
     setStore((prev) => {
@@ -302,6 +327,8 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     addAsset,
     addDividend,
     deleteAsset,
+    setAssetAmount,
+    tonNumberRate,
     personalWallets,
     addPersonalWallet,
     deletePersonalWallet,

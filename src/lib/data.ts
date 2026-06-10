@@ -44,6 +44,7 @@ function personalFallback(): PersonalData {
     dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
     capitalHistory: fallbackHistory(CHARTS["Г"].v),
     cryptoHistory: fallbackHistory(CHARTS["6М"].v),
+    tonNumberRate: { usd: 0, synced: "ожидает синхронизации", staleDays: -1 },
     synced: "Обновлено только что",
   };
 }
@@ -63,7 +64,7 @@ export async function getPersonalData(): Promise<PersonalData> {
   try {
     // History charts show up to ~13 months back (covers the 1Y period + margin).
     const historyFrom = new Date(Date.now() - 400 * 86400000);
-    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
@@ -74,6 +75,8 @@ export async function getPersonalData(): Promise<PersonalData> {
       prisma.wallet.findMany({ where: { scope: "personal" } }),
       prisma.capitalSnapshot.findMany({ where: { scope: "personal", capturedAt: { gte: historyFrom } }, orderBy: { capturedAt: "asc" } }),
       prisma.capitalSnapshot.findMany({ where: { scope: "crypto", capturedAt: { gte: historyFrom } }, orderBy: { capturedAt: "asc" } }),
+      prisma.priceCache.findUnique({ where: { symbol: "TONNUM" } }),
+      prisma.syncState.findUnique({ where: { source: "tonnums" } }),
     ]);
 
     const toPoints = (rows: { capturedAt: Date; value: unknown }[]): SnapshotPoint[] =>
@@ -145,6 +148,11 @@ export async function getPersonalData(): Promise<PersonalData> {
       dividendsList,
       capitalHistory: toPoints(capitalSnaps),
       cryptoHistory: toPoints(cryptoSnaps),
+      tonNumberRate: {
+        usd: tonnumPrice ? num(tonnumPrice.usd) : 0,
+        synced: relativeRu(tonnumSync?.lastSyncedAt ?? null),
+        staleDays: tonnumSync?.lastSyncedAt ? daysAgoRu(tonnumSync.lastSyncedAt).staleDays : -1,
+      },
       synced: `Обновлено ${relativeRu(sync?.lastSyncedAt ?? null)}`,
     };
   } catch {

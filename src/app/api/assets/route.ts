@@ -1,28 +1,47 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth-server";
+import { TONNUM_SYMBOL } from "@/lib/sync/tonnums";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string } = {};
+  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string } = {};
   try {
     b = await req.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const value = Number(b.value);
-  if (!value || value <= 0) return NextResponse.json({ error: "invalid_value" }, { status: 400 });
+
+  const isTonNumber = b.symbol === TONNUM_SYMBOL;
+  const amount = b.amount == null ? null : Number(b.amount);
+
+  // TON numbers are quantity-driven: validate the count, then price it from the
+  // last synced unit rate (the tonnums sync keeps it fresh afterwards).
+  let value = Number(b.value);
+  if (isTonNumber) {
+    if (!amount || amount <= 0) return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
+    try {
+      const price = await prisma.priceCache.findUnique({ where: { symbol: TONNUM_SYMBOL } });
+      if (price) value = Math.round(amount * Number(price.usd));
+    } catch {
+      /* keep the client-supplied value; sync will correct it */
+    }
+  } else if (!value || value <= 0) {
+    return NextResponse.json({ error: "invalid_value" }, { status: 400 });
+  }
 
   try {
     const a = await prisma.asset.create({
       data: {
         icon: b.icon || "box",
         name: (b.name || "").trim() || "Актив",
-        value,
+        value: isNaN(value) ? 0 : value,
         delta: b.delta == null ? null : Number(b.delta),
+        amount: amount == null || isNaN(amount) ? null : amount,
+        symbol: b.symbol || null,
         source: (b.src as "sync" | "sheets" | "manual") || "manual",
         bucket: (b.bucket as "crypto" | "vehicles" | "cash" | "other") || "other",
       },

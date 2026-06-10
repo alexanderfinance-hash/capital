@@ -3,10 +3,11 @@
 import React from "react";
 import { Icon } from "./Icon";
 import { Badge, Chip } from "@/lib/chart";
-import { fmt, fmtAmount } from "@/lib/format";
+import { fmt, fmtAmount, fmtTonNumbers } from "@/lib/format";
 import type { Asset } from "@/lib/types";
 
 export function CatCard({ a }: { a: Asset }) {
+  const isTon = a.symbol === "TONNUM";
   return (
     <div className="card cat">
       <div className="row1">
@@ -19,9 +20,9 @@ export function CatCard({ a }: { a: Asset }) {
       <div className="val">{fmt(a.value)}</div>
       <div className="row2">
         <Chip d={a.delta} />
-        {a.amount != null && a.symbol && (
+        {a.amount != null && (isTon || a.symbol) && (
           <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
-            {fmtAmount(a.amount)} {a.symbol}
+            {isTon ? fmtTonNumbers(a.amount) : `${fmtAmount(a.amount)} ${a.symbol}`}
           </span>
         )}
       </div>
