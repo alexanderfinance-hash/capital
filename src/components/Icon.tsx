@@ -20,6 +20,8 @@ export const ICON_PATHS: Record<string, string> = {
     '<circle cx="12" cy="8.5" r="4.5"/><path d="M12 6.5v4M10 8.5h4"/><path d="M5 18.5h14"/>',
   box:
     '<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>',
+  phone:
+    '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/>',
   building:
     '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01"/><path d="M9 21v-3h6v3"/>',
   plus: '<path d="M12 6v12M6 12h12"/>',

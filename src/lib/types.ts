@@ -143,6 +143,14 @@ export interface CompanyPayable {
   staleDays: number; // -1 = ни разу не синхронизирован
 }
 
+/** Live unit price of one anonymous TON number (nums888.io), shown next to the
+ *  TON-number asset. `usd` = 0 until the first successful sync. */
+export interface TonNumberRate {
+  usd: number;
+  synced: string;
+  staleDays: number; // -1 = ни разу не синхронизирован
+}
+
 /* ---- Shapes passed from server → client store ---- */
 export interface PersonalData {
   assets: Asset[];
@@ -157,6 +165,7 @@ export interface PersonalData {
   dividendsList: Dividend[];
   capitalHistory: SnapshotPoint[];
   cryptoHistory: SnapshotPoint[];
+  tonNumberRate: TonNumberRate;
   synced: string;
 }
 
