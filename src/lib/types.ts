@@ -33,8 +33,20 @@ export interface ExpenseCat {
 }
 export interface ExpenseMonth {
   m: string;
-  v: number;
+  v: number; // expenses (USD)
+  income?: number; // personal income for the month (USD, mostly dividends)
   period?: string; // "YYYY-MM"
+}
+
+/** Expense rows reclassified as investments (education etc.). Shown on
+ *  Инвестиции separately and NOT counted in the portfolio total. */
+export interface OtherInvestmentItem {
+  name: string; // "Образование и развитие · Коучи/преподаватели/наставники"
+  value: number; // USD
+}
+export interface OtherInvestments {
+  total: number; // USD
+  items: OtherInvestmentItem[];
 }
 export interface CoinAlloc {
   t: string;
@@ -93,6 +105,7 @@ export interface PersonalStore {
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
   dividendsList: Dividend[];
+  otherInvestments: OtherInvestments;
 }
 
 /* ---- Company ---- */
@@ -165,6 +178,7 @@ export interface PersonalData {
   cryptoWallets: CryptoWalletHolding[];
   personalWallets: PersonalWalletRow[];
   dividendsList: Dividend[];
+  otherInvestments: OtherInvestments;
   capitalHistory: SnapshotPoint[];
   cryptoHistory: SnapshotPoint[];
   tonNumberRate: TonNumberRate;

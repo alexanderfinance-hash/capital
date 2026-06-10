@@ -170,6 +170,29 @@ model ExpenseSubcategory {
   @@index([period, parent])
 }
 
+/// Monthly personal income (mostly dividends), imported from the ДДС Google
+/// Sheet ledger. Drives the income series on the расходы/доходы chart. Keyed by
+/// period "YYYY-MM"; value is in USD (the ledger is kept in USD).
+model MonthlyIncome {
+  period   String   @id // "2025-12"
+  usd      Decimal  @db.Decimal(18, 2)
+  source   String   @default("dds") // "dds" (sheet) | "manual"
+  syncedAt DateTime @default(now())
+}
+
+/// Expense rows reclassified as investments (not spendable — e.g. education).
+/// Pulled out of the expense totals/categories and shown separately on
+/// Инвестиции, explicitly NOT counted in the portfolio total.
+model OtherInvestment {
+  id     String  @id @default(cuid())
+  period String // "2025-12"
+  parent String // Статья (e.g. "Образование и развитие")
+  name   String // Подстатья (e.g. "Коучи\преподаватели\наставники")
+  value  Decimal @db.Decimal(18, 2) // USD
+
+  @@unique([period, parent, name])
+}
+
 /// Coin allocation for the investments view (derived from wallets in Stage 6).
 model CoinAllocation {
   id     String @id @default(cuid())
