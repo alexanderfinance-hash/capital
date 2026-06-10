@@ -47,7 +47,7 @@ export default function Overview() {
               </div>
             )}
           </div>
-          {c.empty ? <ChartEmpty /> : <LineChart vals={c.vals} labels={c.labels} />}
+          {c.empty ? <ChartEmpty /> : <LineChart vals={c.vals} labels={c.labels} tip={c.points} />}
         </div>
 
         <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column" }}>

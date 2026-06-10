@@ -1,13 +1,16 @@
-import React from "react";
+"use client";
+
+import React, { useRef, useState } from "react";
 import { fmt, fmtK } from "./format";
 import type { Asset, HistoryPoint, SnapshotPoint } from "./types";
 
 /* ===== Real-history series (PRD §6) ===== */
-const PERIOD_DAYS: Record<string, number> = { "1М": 31, "6М": 184, "1Г": 366 };
+const PERIOD_DAYS: Record<string, number> = { "1Н": 7, "1М": 31, "6М": 184, "1Г": 366 };
 
 export interface Series {
   vals: number[]; // in thousands (for LineChart)
   labels: string[]; // sparse — empty string = no tick
+  points: { label: string; value: number }[]; // full per-point label + USD value (for hover tooltips)
   deltaPct: number;
   deltaAbs: number; // signed, in dollars
   empty: boolean;
@@ -23,19 +26,20 @@ export function seriesForPeriod(points: SnapshotPoint[], period: string): Series
   // Keep at least the two most recent points so a line can always be drawn
   // once history exists, even if the period window is very short.
   if (pts.length < 2 && points.length >= 2) pts = points.slice(-2);
-  if (pts.length < 2) return { vals: [], labels: [], deltaPct: 0, deltaAbs: 0, empty: true };
+  if (pts.length < 2) return { vals: [], labels: [], points: [], deltaPct: 0, deltaAbs: 0, empty: true };
 
   const vals = pts.map((p) => p.value / 1000);
   const n = pts.length;
   // Show ~6 evenly-spaced labels (plus the last) to avoid clutter on dense data.
   const step = Math.max(1, Math.ceil(n / 6));
   const labels = pts.map((p, i) => (i % step === 0 || i === n - 1 ? p.label : ""));
+  const fullPoints = pts.map((p) => ({ label: p.label, value: p.value }));
 
   const first = pts[0].value;
   const last = pts[n - 1].value;
   const deltaAbs = last - first;
   const deltaPct = first ? +((deltaAbs / first) * 100).toFixed(1) : 0;
-  return { vals, labels, deltaPct, deltaAbs, empty: false };
+  return { vals, labels, points: fullPoints, deltaPct, deltaAbs, empty: false };
 }
 
 /** Placeholder shown until enough history accumulates (PRD §6). */
@@ -73,8 +77,12 @@ export interface ChartOpts {
 }
 
 /* Line/area chart — mirrors buildChart() in dashboard-content.js.
-   `vals` are in thousands (axis labels use fmtK(v*1000)). */
-export function LineChart({ vals, labels, o = {} }: { vals: number[]; labels?: string[]; o?: ChartOpts }) {
+   `vals` are in thousands (axis labels use fmtK(v*1000)).
+   `tip` (optional) carries the full per-point label + USD value so hovering the
+   chart shows the exact figure at the cursor (Google-Sheets style). */
+export function LineChart({ vals, labels, tip, o = {} }: { vals: number[]; labels?: string[]; tip?: { label: string; value: number }[]; o?: ChartOpts }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hi_, setHover] = useState<number | null>(null);
   const W = o.W || 720,
     H = o.H || 240,
     padL = o.padL != null ? o.padL : 42,
@@ -123,14 +131,64 @@ export function LineChart({ vals, labels, o = {} }: { vals: number[]; labels?: s
     });
 
   const end = pts[pts.length - 1];
+
+  // Map the cursor to the nearest data point (viewBox-aware).
+  const onMove = (e: React.MouseEvent) => {
+    const svg = svgRef.current;
+    if (!svg || vals.length < 2) return;
+    const rect = svg.getBoundingClientRect();
+    const vx = ((e.clientX - rect.left) / rect.width) * W;
+    let i = Math.round(((vx - padL) * (vals.length - 1)) / (W - padL - padR));
+    i = Math.max(0, Math.min(vals.length - 1, i));
+    setHover(i);
+  };
+
+  const hp = hi_ != null ? pts[hi_] : null;
+  const hVal = hi_ != null ? (tip?.[hi_]?.value ?? vals[hi_] * 1000) : 0;
+  const hLabel = hi_ != null ? (tip?.[hi_]?.label ?? labels?.[hi_] ?? "") : "";
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
-      {gridEls}
-      <path d={area} fill="var(--pos-fill)" />
-      <path d={line} fill="none" stroke="var(--pos)" strokeWidth={2.2} />
-      <circle cx={end[0]} cy={end[1]} r={o.W ? 4 : 4.5} fill="var(--pos)" stroke="var(--surface)" strokeWidth={2} />
-      {xl}
-    </svg>
+    <div style={{ position: "relative", width: "100%" }}>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", height: "auto", display: "block" }}
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        {gridEls}
+        <path d={area} fill="var(--pos-fill)" />
+        <path d={line} fill="none" stroke="var(--pos)" strokeWidth={2.2} />
+        {hp && <line x1={hp[0]} y1={top} x2={hp[0]} y2={bot} stroke="var(--faint)" strokeWidth={1} strokeDasharray="3 3" />}
+        <circle cx={end[0]} cy={end[1]} r={o.W ? 4 : 4.5} fill="var(--pos)" stroke="var(--surface)" strokeWidth={2} />
+        {hp && <circle cx={hp[0]} cy={hp[1]} r={4.5} fill="var(--pos)" stroke="var(--surface)" strokeWidth={2} />}
+        {xl}
+      </svg>
+      {hp && (
+        <div
+          style={{
+            position: "absolute",
+            left: `${(hp[0] / W) * 100}%`,
+            top: `${(hp[1] / H) * 100}%`,
+            transform: "translate(-50%, calc(-100% - 10px))",
+            pointerEvents: "none",
+            background: "var(--ink)",
+            color: "var(--surface)",
+            borderRadius: 6,
+            padding: "5px 9px",
+            fontSize: 11.5,
+            lineHeight: 1.35,
+            whiteSpace: "nowrap",
+            textAlign: "center",
+            boxShadow: "0 4px 14px rgba(0,0,0,.18)",
+            zIndex: 2,
+          }}
+        >
+          <div className="mono" style={{ fontWeight: 600 }}>{fmt(hVal)}</div>
+          {hLabel && <div style={{ opacity: 0.7, fontSize: 10 }}>{hLabel}</div>}
+        </div>
+      )}
+    </div>
   );
 }
 

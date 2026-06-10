@@ -49,7 +49,7 @@ export default function Investments() {
               <Badge src="sync" />
             </div>
           </div>
-          {c.empty ? <ChartEmpty /> : <LineChart vals={c.vals} labels={c.labels} />}
+          {c.empty ? <ChartEmpty /> : <LineChart vals={c.vals} labels={c.labels} tip={c.points} />}
         </div>
 
         <div className="card" style={{ padding: 24 }}>

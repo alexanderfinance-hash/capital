@@ -2,20 +2,39 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth-server";
 import { TONNUM_SYMBOL } from "@/lib/sync/tonnums";
+import { getCurrentUsdRub } from "@/lib/fx";
 
 export const runtime = "nodejs";
 
-// Update a TON-number asset's quantity; the value is re-priced from the last
-// synced unit rate (the tonnums sync keeps it fresh afterwards).
+// Update a manual asset: either a TON-number quantity (`amount`, re-priced from
+// the synced unit rate) or a RUB asset's original ruble amount (`nativeValue`,
+// re-valued to USD at the current CBR rate).
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { amount?: number } = {};
+  let b: { amount?: number; nativeValue?: number } = {};
   try {
     b = await req.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
+
+  // RUB asset: update the ruble amount, recompute USD value.
+  if (b.nativeValue != null) {
+    const nativeValue = Number(b.nativeValue);
+    if (isNaN(nativeValue) || nativeValue <= 0) return NextResponse.json({ error: "invalid_value" }, { status: 400 });
+    try {
+      const asset = await prisma.asset.findFirst({ where: { OR: [{ slug: params.id }, { id: params.id }], source: "manual" } });
+      if (!asset) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const rate = await getCurrentUsdRub();
+      const value = rate > 0 ? Math.round(nativeValue / rate) : Number(asset.value);
+      await prisma.asset.update({ where: { id: asset.id }, data: { nativeValue, value, currency: "RUB" } });
+      return NextResponse.json({ ok: true, value, nativeValue });
+    } catch {
+      return NextResponse.json({ persisted: false }, { status: 503 });
+    }
+  }
+
   const amount = Number(b.amount);
   if (isNaN(amount) || amount <= 0) return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
 

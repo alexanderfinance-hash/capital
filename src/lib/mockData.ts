@@ -83,7 +83,7 @@ export const CHARTS: Record<string, ChartSeries> = {
   "Всё": { v: [180, 205, 255, 330, 435], l: ["2021", "2022", "2023", "2024", "2025"], d: 141, a: "+$255,020" },
 };
 
-export const PERIODS = ["1М", "6М", "1Г"] as const;
+export const PERIODS = ["1Н", "1М", "6М", "1Г"] as const;
 
 /* ===== Company (dashboard-company.js → WALLETS / AGENCIES / HISTORY) ===== */
 

@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string; currency?: string } = {};
+  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string; currency?: string; nativeValue?: number } = {};
   try {
     b = await req.json();
   } catch {
@@ -32,17 +32,20 @@ export async function POST(req: Request) {
     } catch {
       /* keep the client-supplied value; sync will correct it */
     }
-  } else if (!value || value <= 0) {
-    return NextResponse.json({ error: "invalid_value" }, { status: 400 });
   } else if (currency === "RUB") {
-    // Store the original RUB amount; value is shown in USD at the current CBR rate.
-    nativeValue = value;
+    // The client sends the original RUB amount in `nativeValue` (and a USD hint in
+    // `value` for the optimistic UI). The server is the source of truth: store the
+    // RUB amount and derive USD from the current CBR rate. Never re-divide `value`.
+    nativeValue = Number(b.nativeValue ?? b.value);
+    if (!nativeValue || nativeValue <= 0 || isNaN(nativeValue)) return NextResponse.json({ error: "invalid_value" }, { status: 400 });
     try {
       const rate = await getCurrentUsdRub();
-      value = rate > 0 ? Math.round(nativeValue / rate) : nativeValue;
+      value = rate > 0 ? Math.round(nativeValue / rate) : Number(b.value);
     } catch {
-      /* keep native as a placeholder; getPersonalData re-converts on read */
+      value = Number(b.value); // keep the client's USD hint; getPersonalData re-converts on read
     }
+  } else if (!value || value <= 0) {
+    return NextResponse.json({ error: "invalid_value" }, { status: 400 });
   }
 
   try {

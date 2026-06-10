@@ -10,21 +10,28 @@ import { AddAssetModal } from "../AddAssetModal";
 import type { Asset } from "@/lib/types";
 
 export default function Assets() {
-  const { store, personalTotal, deleteAsset, setAssetAmount, tonNumberRate, toast } = useApp();
+  const { store, personalTotal, deleteAsset, setAssetAmount, setAssetNative, tonNumberRate, toast } = useApp();
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
 
+  const isRubAsset = (a: Asset) => a.currency === "RUB" && a.nativeValue != null;
   const startEdit = (a: Asset) => {
     setEditId(a.id);
-    setEditVal(String(a.amount ?? 0));
+    setEditVal(String(a.symbol === "TONNUM" ? a.amount ?? 0 : a.nativeValue ?? 0));
   };
   const saveEdit = (a: Asset) => {
-    const qty = Math.round(parseFloat((editVal || "").replace(/[^\d.]/g, "")) || 0);
+    const n = Math.round(parseFloat((editVal || "").replace(/[^\d.]/g, "")) || 0);
     setEditId(null);
-    if (qty > 0 && qty !== a.amount) {
-      setAssetAmount(a.id, qty);
-      toast(`Обновлено: ${a.name} · ${fmtTonNumbers(qty)}`);
+    if (n <= 0) return;
+    if (a.symbol === "TONNUM") {
+      if (n !== a.amount) {
+        setAssetAmount(a.id, n);
+        toast(`Обновлено: ${a.name} · ${fmtTonNumbers(n)}`);
+      }
+    } else if (n !== a.nativeValue) {
+      setAssetNative(a.id, n);
+      toast(`Обновлено: ${a.name} · ${fmtRub(n)}`);
     }
   };
 
@@ -52,6 +59,8 @@ export default function Assets() {
           )}
           {store.assets.map((a) => {
             const isTon = a.symbol === "TONNUM";
+            const isRub = isRubAsset(a);
+            const editable = isTon || isRub;
             const editing = editId === a.id;
             return (
               <div className="mlist-row" key={a.id}>
@@ -86,7 +95,7 @@ export default function Assets() {
                     )}
                   </div>
                 </div>
-                {isTon && editing ? (
+                {editable && editing ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <input
                       autoFocus
@@ -99,11 +108,11 @@ export default function Assets() {
                         if (e.key === "Escape") setEditId(null);
                       }}
                       onBlur={() => saveEdit(a)}
-                      style={{ width: 72, textAlign: "right", padding: "4px 8px", fontSize: 13 }}
+                      style={{ width: isTon ? 72 : 120, textAlign: "right", padding: "4px 8px", fontSize: 13 }}
                       className="mono"
                     />
                     <span className="k" style={{ fontSize: 11 }}>
-                      шт
+                      {isTon ? "шт" : "₽"}
                     </span>
                   </div>
                 ) : (
@@ -116,39 +125,28 @@ export default function Assets() {
                     </div>
                   </div>
                 )}
-                {isTon ? (
+                {editable ? (
                   <button
-                    title="Изменить количество"
+                    title={isTon ? "Изменить количество" : "Изменить сумму в рублях"}
                     onClick={() => (editing ? saveEdit(a) : startEdit(a))}
                     style={{ marginLeft: 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
                   >
                     <Icon name="sliders" style={{ width: 16, height: 16 }} />
                   </button>
-                ) : a.src === "manual" ? (
+                ) : null}
+                {a.src === "manual" ? (
                   <button
                     title="Удалить"
                     onClick={() => {
                       deleteAsset(a.id);
                       toast(`Удалено: ${a.name}`);
                     }}
-                    style={{ marginLeft: 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
+                    style={{ marginLeft: editable ? 4 : 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
                   >
                     <Icon name="close" style={{ width: 16, height: 16 }} />
                   </button>
                 ) : (
                   <span style={{ width: 16, marginLeft: 12 }} />
-                )}
-                {isTon && (
-                  <button
-                    title="Удалить"
-                    onClick={() => {
-                      deleteAsset(a.id);
-                      toast(`Удалено: ${a.name}`);
-                    }}
-                    style={{ marginLeft: 4, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
-                  >
-                    <Icon name="close" style={{ width: 16, height: 16 }} />
-                  </button>
                 )}
               </div>
             );
