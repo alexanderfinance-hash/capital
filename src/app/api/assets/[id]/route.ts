@@ -50,12 +50,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 }
 
-// Delete a manual asset (synced crypto assets are managed automatically).
+// Delete a user-added asset. Sync-managed crypto holdings (slug "coin-*",
+// recreated every crypto sync) are protected; everything else the user created
+// manually — including a crypto-bucket asset added by hand (slug null) — can go.
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     const res = await prisma.asset.deleteMany({
-      where: { OR: [{ slug: params.id }, { id: params.id }], source: "manual" },
+      where: {
+        AND: [{ OR: [{ slug: params.id }, { id: params.id }] }, { OR: [{ source: "manual" }, { slug: null }] }],
+      },
     });
     if (res.count === 0) return NextResponse.json({ error: "not_found" }, { status: 404 });
     return NextResponse.json({ ok: true });

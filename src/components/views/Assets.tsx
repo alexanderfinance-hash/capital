@@ -62,6 +62,9 @@ export default function Assets() {
             const isRub = isRubAsset(a);
             const editable = isTon || isRub;
             const editing = editId === a.id;
+            // Everything the user added is removable; only sync-managed coins
+            // (crypto bucket with a ticker) are protected.
+            const removable = !(a.bucket === "crypto" && !!a.symbol);
             return (
               <div className="mlist-row" key={a.id}>
                 <div className="tile">
@@ -134,7 +137,7 @@ export default function Assets() {
                     <Icon name="sliders" style={{ width: 16, height: 16 }} />
                   </button>
                 ) : null}
-                {a.src === "manual" ? (
+                {removable ? (
                   <button
                     title="Удалить"
                     onClick={() => {
