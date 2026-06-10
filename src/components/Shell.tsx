@@ -102,11 +102,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </div>
             <div style={{ marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--hair)", fontSize: 11, color: "var(--muted)" }}>{personalSynced}</div>
           </div>
-          <div className="nav-item" style={{ marginTop: 6, color: "var(--muted)" }}>
-            <Icon name="gear" />
-            <span>Настройки</span>
-          </div>
-          <button className="nav-item" onClick={logout} style={{ width: "100%", color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--sans)", textAlign: "left" }}>
+          <button className="nav-item" onClick={logout} style={{ width: "100%", marginTop: 6, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--sans)", textAlign: "left" }}>
             <Icon name="back" />
             <span>Выйти</span>
           </button>

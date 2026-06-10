@@ -29,7 +29,7 @@ export const ICON_PATHS: Record<string, string> = {
     '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   trend: '<polyline points="3 17 9 11 13 15 21 7"/><polyline points="21 11 21 7 17 7"/>',
   receipt:
-    '<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-3-2z"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/>',
+    '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3.5"/>',
   gear:
     '<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l1.7-1.3-1.9-3.3-2 .8a7.6 7.6 0 0 0-2.6-1.5L14 2h-4l-.3 2.2a7.6 7.6 0 0 0-2.6 1.5l-2-.8L3.1 8.2 4.8 9.5a7.8 7.8 0 0 0 0 3l-1.7 1.3 1.9 3.3 2-.8a7.6 7.6 0 0 0 2.6 1.5L10 22h4l.3-2.2a7.6 7.6 0 0 0 2.6-1.5l2 .8 1.9-3.3z"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 6"/><polyline points="20 4 20 11 13 11"/>',
