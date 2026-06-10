@@ -25,3 +25,7 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
 /** "5 номеров" — quantity label for TON anonymous numbers. */
 export const fmtTonNumbers = (n: number): string =>
   `${fmtAmount(n)} ${pluralRu(Math.round(n), "номер", "номера", "номеров")}`;
+
+/** "₽1 500 000" — RUB amount, space-grouped (no decimals). */
+export const fmtRub = (n: number): string =>
+  "₽" + Math.round(n).toLocaleString("ru-RU");

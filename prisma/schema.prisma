@@ -70,10 +70,14 @@ model Asset {
   slug      String?     @unique // stable id for seeded rows (e.g. "crypto")
   icon      String
   name      String
-  value     Decimal     @db.Decimal(18, 2)
+  value     Decimal     @db.Decimal(18, 2) // always USD (converted from `currency`)
   delta     Decimal?    @db.Decimal(6, 2)
   amount    Decimal?    @db.Decimal(30, 8) // token quantity (crypto holdings)
   symbol    String?     // coin ticker for crypto holdings (BTC/ETH/…)
+  /// Currency the user entered the value in ("USD" | "RUB"). RUB assets keep the
+  /// original amount in `nativeValue` and are shown in USD at the current CBR rate.
+  currency    String   @default("USD")
+  nativeValue Decimal? @db.Decimal(18, 2) // original amount in `currency` (when not USD)
   source    DataSource
   bucket    AssetBucket
   createdAt DateTime    @default(now())

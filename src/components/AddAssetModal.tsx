@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { Badge } from "@/lib/chart";
 import { useApp } from "@/lib/store";
-import { fmt, fmtTonNumbers } from "@/lib/format";
+import { fmt, fmtTonNumbers, fmtRub } from "@/lib/format";
 import type { AssetBucket, DataSource } from "@/lib/types";
 
 interface CatDef {
@@ -25,10 +25,11 @@ const CATS: CatDef[] = [
 ];
 
 export function AddAssetModal({ onClose }: { onClose: () => void }) {
-  const { addAsset, toast, tonNumberRate } = useApp();
+  const { addAsset, toast, tonNumberRate, usdRub } = useApp();
   const [cat, setCat] = useState(0);
   const [name, setName] = useState("");
   const [val, setVal] = useState("");
+  const [cur, setCur] = useState<"USD" | "RUB">("USD");
   const [err, setErr] = useState(false);
   const [show, setShow] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -44,9 +45,14 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
 
   const c = CATS[cat];
   const unit = tonNumberRate.usd;
+  // Currency choice applies to value-based manual assets (cash / car / valuables / other).
+  const showCurrency = !c.tonNumber && c.src === "manual";
+  const isRub = showCurrency && cur === "RUB";
+  const parsed = parseFloat((val || "").replace(/[^\d.]/g, "")) || 0;
+  const previewUsd = isRub && usdRub > 0 ? Math.round(parsed / usdRub) : 0;
 
   const save = () => {
-    const n = parseFloat((val || "").replace(/[^\d.]/g, "")) || 0;
+    const n = parsed;
     if (n <= 0) {
       setErr(true);
       return;
@@ -62,7 +68,15 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
       return;
     }
     const finalName = name.trim() || c.label;
-    addAsset({ icon: c.icon, name: finalName, value: n, delta: c.src === "sync" ? 0 : null, src: c.src, bucket: c.bucket });
+    if (isRub) {
+      // Store the original RUB amount; value is shown in USD at the current CBR rate.
+      const usd = usdRub > 0 ? Math.round(n / usdRub) : n;
+      addAsset({ icon: c.icon, name: finalName, value: usd, delta: null, currency: "RUB", nativeValue: n, src: c.src, bucket: c.bucket });
+      onClose();
+      toast(`Добавлено: ${finalName} · ${fmtRub(n)} ≈ ${fmt(usd)}`);
+      return;
+    }
+    addAsset({ icon: c.icon, name: finalName, value: n, delta: c.src === "sync" ? 0 : null, currency: "USD", src: c.src, bucket: c.bucket });
     onClose();
     toast(`Добавлено: ${finalName} · ${fmt(n)}`);
   };
@@ -93,8 +107,21 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
             <span className="k">Название</span>
             <input type="text" placeholder={c.tonNumber ? "Напр. Анонимные TON номера" : "Напр. Tesla Model 3"} autoComplete="off" ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} />
           </label>
+          {showCurrency && (
+            <label className="fld">
+              <span className="k">Валюта</span>
+              <div className="seg-cat">
+                <button type="button" className={cur === "USD" ? "on" : ""} onClick={() => setCur("USD")}>
+                  $ Доллары
+                </button>
+                <button type="button" className={cur === "RUB" ? "on" : ""} onClick={() => setCur("RUB")}>
+                  ₽ Рубли
+                </button>
+              </div>
+            </label>
+          )}
           <label className="fld">
-            <span className="k">{c.tonNumber ? "Количество, шт" : "Стоимость, $"}</span>
+            <span className="k">{c.tonNumber ? "Количество, шт" : isRub ? "Стоимость, ₽" : "Стоимость, $"}</span>
             <input
               type="text"
               inputMode="numeric"
@@ -107,6 +134,17 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
               }}
             />
           </label>
+          {isRub && (
+            <div className="hint" style={{ color: "var(--muted)" }}>
+              {parsed > 0 && usdRub > 0 ? (
+                <>
+                  ≈ <span className="mono">{fmt(previewUsd)}</span> по курсу ЦБ (<span className="mono">₽{usdRub.toFixed(2)}</span>/$). Сумма пересчитывается в доллары автоматически.
+                </>
+              ) : (
+                <>Введите сумму в рублях — покажу её в долларах по актуальному курсу ЦБ.</>
+              )}
+            </div>
+          )}
           {c.tonNumber && (
             <div className="hint" style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
               <span>

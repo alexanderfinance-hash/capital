@@ -9,10 +9,12 @@ export interface Asset {
   id: string;
   icon: string;
   name: string;
-  value: number;
+  value: number; // USD (converted from `currency` at the current CBR rate)
   delta: number | null;
   amount?: number | null; // token quantity (crypto)
   symbol?: string | null; // coin ticker (crypto)
+  currency?: string; // "USD" | "RUB" — currency the value was entered in
+  nativeValue?: number | null; // original amount in `currency` (when not USD)
   src: DataSource;
   bucket: AssetBucket;
 }
@@ -166,6 +168,7 @@ export interface PersonalData {
   capitalHistory: SnapshotPoint[];
   cryptoHistory: SnapshotPoint[];
   tonNumberRate: TonNumberRate;
+  usdRub: number; // current USD→RUB rate (RUB per 1 USD), for RUB asset entry/display
   synced: string;
 }
 

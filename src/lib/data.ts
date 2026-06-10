@@ -5,6 +5,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import { initialStore, WALLETS, AGENCIES, HISTORY, DEFAULT_RESERVES, CHARTS } from "./mockData";
 import { relativeRu, daysAgoRu, dayMonthRu } from "./time";
+import { getCurrentUsdRub, fallbackRate } from "./fx";
 import type {
   PersonalData,
   CompanyData,
@@ -45,6 +46,7 @@ function personalFallback(): PersonalData {
     capitalHistory: fallbackHistory(CHARTS["Г"].v),
     cryptoHistory: fallbackHistory(CHARTS["6М"].v),
     tonNumberRate: { usd: 0, synced: "ожидает синхронизации", staleDays: -1 },
+    usdRub: fallbackRate(),
     synced: "Обновлено только что",
   };
 }
@@ -82,17 +84,28 @@ export async function getPersonalData(): Promise<PersonalData> {
     const toPoints = (rows: { capturedAt: Date; value: unknown }[]): SnapshotPoint[] =>
       rows.map((s) => ({ t: s.capturedAt.toISOString(), label: dayMonthRu(s.capturedAt), value: num(s.value) }));
 
-    const assets: Asset[] = assetRows.map((a) => ({
-      id: a.slug ?? a.id,
-      icon: a.icon,
-      name: a.name,
-      value: num(a.value),
-      delta: a.delta === null ? null : num(a.delta),
-      amount: a.amount === null ? null : num(a.amount),
-      symbol: a.symbol ?? null,
-      src: a.source as DataSource,
-      bucket: a.bucket as AssetBucket,
-    }));
+    // Current USD→RUB rate (RUB per 1 USD) to value RUB-denominated assets in USD.
+    const usdRub = await getCurrentUsdRub();
+
+    const assets: Asset[] = assetRows.map((a) => {
+      const currency = a.currency ?? "USD";
+      const nativeValue = a.nativeValue == null ? null : num(a.nativeValue);
+      // RUB assets are shown in USD at the current rate (fresh on every load).
+      const value = currency === "RUB" && nativeValue != null && usdRub > 0 ? Math.round(nativeValue / usdRub) : num(a.value);
+      return {
+        id: a.slug ?? a.id,
+        icon: a.icon,
+        name: a.name,
+        value,
+        delta: a.delta === null ? null : num(a.delta),
+        amount: a.amount === null ? null : num(a.amount),
+        symbol: a.symbol ?? null,
+        currency,
+        nativeValue,
+        src: a.source as DataSource,
+        bucket: a.bucket as AssetBucket,
+      };
+    });
 
     const months = monthRows.map((m) => ({ m: m.label, v: num(m.value), period: m.monthStart.toISOString().slice(0, 7) }));
     const lastV = months.length ? months[months.length - 1].v : 0;
@@ -153,6 +166,7 @@ export async function getPersonalData(): Promise<PersonalData> {
         synced: relativeRu(tonnumSync?.lastSyncedAt ?? null),
         staleDays: tonnumSync?.lastSyncedAt ? daysAgoRu(tonnumSync.lastSyncedAt).staleDays : -1,
       },
+      usdRub,
       synced: `Обновлено ${relativeRu(sync?.lastSyncedAt ?? null)}`,
     };
   } catch {

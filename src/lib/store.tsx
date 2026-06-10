@@ -33,6 +33,7 @@ interface AppState {
   deleteAsset: (id: string) => void;
   setAssetAmount: (id: string, amount: number) => void;
   tonNumberRate: TonNumberRate;
+  usdRub: number;
   personalWallets: PersonalWalletRow[];
   addPersonalWallet: (w: { address: string; chain: string; label: string }) => void;
   deletePersonalWallet: (id: string) => void;
@@ -107,6 +108,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const [capitalHistory] = useState<SnapshotPoint[]>(initial.personal.capitalHistory.map((p) => ({ ...p })));
   const [cryptoHistory] = useState<SnapshotPoint[]>(initial.personal.cryptoHistory.map((p) => ({ ...p })));
   const [tonNumberRate] = useState<TonNumberRate>({ ...initial.personal.tonNumberRate });
+  const [usdRub] = useState<number>(initial.personal.usdRub);
 
   const [reserves, setReserves] = useState<Reserves>(initial.company.reserves);
   const [agencies, setAgencies] = useState<Agency[]>(initial.company.agencies.map((a) => ({ ...a })));
@@ -329,6 +331,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     deleteAsset,
     setAssetAmount,
     tonNumberRate,
+    usdRub,
     personalWallets,
     addPersonalWallet,
     deletePersonalWallet,
