@@ -62,7 +62,18 @@ export const initialStore: PersonalStore = {
     { date: "12 фев", name: "Дивиденды AAPL", amount: 860 },
     { date: "20 янв", name: "USDT lending", amount: 1530 },
   ],
+  otherInvestments: { total: 0, items: [] },
 };
+
+// Demo income so the расходы/доходы chart has a second series in dev (no DB).
+initialStore.expenseMonths = [
+  { m: "Янв", v: 9100, income: 12400 },
+  { m: "Фев", v: 8800, income: 9300 },
+  { m: "Мар", v: 9300, income: 15200 },
+  { m: "Апр", v: 8200, income: 7600 },
+  { m: "Май", v: 8900, income: 18100 },
+  { m: "Июн", v: 8430, income: 11200 },
+];
 
 export const CHARTS: Record<string, ChartSeries> = {
   "Н": { v: [431, 430, 432, 431, 433, 434, 435], l: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], d: 0.9, a: "+$3,910" },

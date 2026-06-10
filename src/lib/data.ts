@@ -43,6 +43,7 @@ function personalFallback(): PersonalData {
     cryptoWallets: [],
     personalWallets: [],
     dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
+    otherInvestments: { total: 0, items: [] },
     capitalHistory: fallbackHistory(CHARTS["Г"].v),
     cryptoHistory: fallbackHistory(CHARTS["6М"].v),
     tonNumberRate: { usd: 0, synced: "ожидает синхронизации", staleDays: -1 },
@@ -66,7 +67,7 @@ export async function getPersonalData(): Promise<PersonalData> {
   try {
     // History charts show up to ~13 months back (covers the 1Y period + margin).
     const historyFrom = new Date(Date.now() - 400 * 86400000);
-    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync, incomeRows, investRows] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
@@ -79,6 +80,8 @@ export async function getPersonalData(): Promise<PersonalData> {
       prisma.capitalSnapshot.findMany({ where: { scope: "crypto", capturedAt: { gte: historyFrom } }, orderBy: { capturedAt: "asc" } }),
       prisma.priceCache.findUnique({ where: { symbol: "TONNUM" } }),
       prisma.syncState.findUnique({ where: { source: "tonnums" } }),
+      prisma.monthlyIncome.findMany(),
+      prisma.otherInvestment.findMany({ orderBy: { value: "desc" } }),
     ]);
 
     const toPoints = (rows: { capturedAt: Date; value: unknown }[]): SnapshotPoint[] =>
@@ -107,7 +110,14 @@ export async function getPersonalData(): Promise<PersonalData> {
       };
     });
 
-    const months = monthRows.map((m) => ({ m: m.label, v: num(m.value), period: m.monthStart.toISOString().slice(0, 7) }));
+    // Monthly income (mostly dividends, from the ДДС sheet) keyed by "YYYY-MM".
+    const incomeByPeriod = new Map<string, number>();
+    for (const r of incomeRows) incomeByPeriod.set(r.period, num(r.usd));
+
+    const months = monthRows.map((m) => {
+      const period = m.monthStart.toISOString().slice(0, 7);
+      return { m: m.label, v: num(m.value), income: incomeByPeriod.get(period) ?? 0, period };
+    });
     const lastV = months.length ? months[months.length - 1].v : 0;
     const prevV = months.length > 1 ? months[months.length - 2].v : lastV;
     const expensesDelta = prevV ? Math.round(((lastV - prevV) / prevV) * 100) : 0;
@@ -148,6 +158,18 @@ export async function getPersonalData(): Promise<PersonalData> {
     const dividendsList = dividendRows.map((d) => ({ date: dayMonthRu(d.paidAt), name: d.name, amount: num(d.amount) }));
     const dividendsTotal = dividendsList.reduce((s, d) => s + d.amount, 0);
 
+    // Reclassified investments (education etc.) — summed across all stored
+    // periods, grouped by subcategory. Shown on Инвестиции, excluded from totals.
+    const investAgg = new Map<string, number>();
+    for (const r of investRows) {
+      const label = `${r.parent} · ${r.name}`;
+      investAgg.set(label, (investAgg.get(label) ?? 0) + num(r.value));
+    }
+    const otherInvestments = {
+      total: [...investAgg.values()].reduce((s, v) => s + v, 0),
+      items: [...investAgg.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
+    };
+
     return {
       assets,
       flows: { expenses: { value: lastV, delta: expensesDelta }, dividends: { value: dividendsTotal } },
@@ -159,6 +181,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       cryptoWallets,
       personalWallets,
       dividendsList,
+      otherInvestments,
       capitalHistory: toPoints(capitalSnaps),
       cryptoHistory: toPoints(cryptoSnaps),
       tonNumberRate: {

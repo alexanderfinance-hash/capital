@@ -24,11 +24,20 @@ function excludeSet(): Set<string> {
   return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
 }
 
+/** Subcategories (Подстатья) reclassified from expenses to investments — pulled
+ *  out of the expense totals and shown separately on Инвестиции (e.g. coaching /
+ *  education, which can't be sold). Comma-separated; matched by exact name. */
+function investSubcatSet(): Set<string> {
+  const raw = process.env.EXPENSE_AS_INVESTMENT ?? "Коучи\\преподаватели\\наставники";
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
 export interface ExpenseSyncResult {
   months: { label: string; value: number }[];
   latestPeriod: string;
   categories: { name: string; value: number }[];
   rateNote: string;
+  investmentsReclassified?: number;
 }
 
 export async function syncExpenses(): Promise<ExpenseSyncResult> {
@@ -49,6 +58,7 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     }
   }
   const exclude = excludeSet();
+  const investSubcats = investSubcatSet();
 
   // 2) The report matrix.
   const rows = await readValues(tab, "A1:AH200");
@@ -97,6 +107,12 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
   const catByMonth = new Map<MonthKey, Map<string, number>>();
   // period → parent → subName → usd
   const subByMonth = new Map<MonthKey, Map<string, Map<string, number>>>();
+  // Reclassified-as-investment subcategories (kept out of expenses entirely).
+  // period → total usd, and period → parent → usd (to deduct from category totals).
+  const investTotalByMonth = new Map<MonthKey, number>();
+  const investParentByMonth = new Map<MonthKey, Map<string, number>>();
+  // period → "parent||name" → { parent, name, usd } for the breakdown rows.
+  const investRows = new Map<MonthKey, Map<string, { parent: string; name: string; usd: number }>>();
 
   for (const mc of monthCols) {
     const key = `${mc.year}-${String(mc.month).padStart(2, "0")}`;
@@ -112,6 +128,7 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     // Subcategory row → attribute to its parent (for the expandable tree).
     const parent = subToParent.get(name);
     if (parent && !exclude.has(parent)) {
+      const isInvest = investSubcats.has(name);
       for (const w of weekCols) {
         const mk = weekMonth.get(w.c);
         if (!mk) continue;
@@ -119,6 +136,18 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
         if (!rub) continue;
         const usd = usdOf(rub, w.endISO);
         const key = `${mk.year}-${String(mk.month).padStart(2, "0")}`;
+        if (isInvest) {
+          // Reclassified as investment: keep out of the expense tree; remember it
+          // so we can deduct it from the parent category + month totals below.
+          investTotalByMonth.set(key, (investTotalByMonth.get(key) || 0) + usd);
+          const ipm = investParentByMonth.get(key) || investParentByMonth.set(key, new Map()).get(key)!;
+          ipm.set(parent, (ipm.get(parent) || 0) + usd);
+          const irm = investRows.get(key) || investRows.set(key, new Map()).get(key)!;
+          const rk = `${parent}||${name}`;
+          const prev = irm.get(rk);
+          irm.set(rk, { parent, name, usd: (prev?.usd || 0) + usd });
+          continue;
+        }
         const pm = subByMonth.get(key)!;
         const sm = pm.get(parent) || pm.set(parent, new Map()).get(parent)!;
         sm.set(name, (sm.get(name) || 0) + usd);
@@ -139,6 +168,21 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     }
   }
 
+  // 4b) Deduct reclassified-as-investment subcategories from the expense totals.
+  // The Статья (category) row in the sheet sums its подстатьи, so the coaching
+  // amount is baked into both the month total and the parent category — remove
+  // it so the расходы chart reflects true spending (clamped at 0 for safety).
+  for (const [key, ipm] of investParentByMonth) {
+    const total = investTotalByMonth.get(key) || 0;
+    monthTotal.set(key, Math.max(0, (monthTotal.get(key) || 0) - total));
+    const cm = catByMonth.get(key);
+    if (cm) {
+      for (const [parent, usd] of ipm) {
+        if (cm.has(parent)) cm.set(parent, Math.max(0, (cm.get(parent) || 0) - usd));
+      }
+    }
+  }
+
   // 5) Keep months in chronological order; last 6.
   const orderedKeys = [...monthMeta.keys()].sort();
   const lastKeys = orderedKeys.slice(-6);
@@ -149,6 +193,17 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     await tx.expenseMonth.deleteMany();
     await tx.expenseCategory.deleteMany();
     await tx.expenseSubcategory.deleteMany();
+    await tx.otherInvestment.deleteMany();
+
+    // Reclassified investments (e.g. coaching/education) — stored for ALL months
+    // of the report, not just the shown window, so large one-off payments show
+    // up on Инвестиции even if older than the 6-month expense window.
+    for (const [period, irm] of investRows) {
+      for (const { parent, name, usd } of irm.values()) {
+        const value = Math.round(usd);
+        if (value > 0) await tx.otherInvestment.create({ data: { period, parent, name, value } });
+      }
+    }
 
     for (const key of lastKeys) {
       const meta = monthMeta.get(key)!;
@@ -194,10 +249,12 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
 
   const cm = catByMonth.get(latest) || new Map();
   const usingLive = [...rates.values()].length > 0;
+  const investTotal = [...investTotalByMonth.values()].reduce((s, v) => s + v, 0);
   return {
     months: lastKeys.map((k) => ({ label: MONTH_SHORT[monthMeta.get(k)!.month], value: Math.round(monthTotal.get(k) || 0) })),
     latestPeriod: latest,
     categories: [...cm.entries()].map(([name, v]) => ({ name, value: Math.round(v) })).sort((a, b) => b.value - a.value),
     rateNote: usingLive ? "rates resolved (cbr/cache/fallback)" : "fallback rate",
+    investmentsReclassified: Math.round(investTotal),
   };
 }

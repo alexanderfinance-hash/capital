@@ -6,14 +6,20 @@ import { fmt } from "@/lib/format";
 import { Chip, Badge } from "@/lib/chart";
 import { Topbar } from "../ui";
 
+/** Signed money label, e.g. "+$4,210" / "−$1,300". */
+const fmtSigned = (n: number): string => (n >= 0 ? "+" : "−") + fmt(Math.abs(n));
+
+type SeriesKey = "income" | "expenses" | "diff";
+
 export default function Expenses() {
   const { store } = useApp();
   const months = store.expenseMonths;
   const lastIdx = months.length - 1;
   const [selIdx, setSelIdx] = useState(lastIdx);
   const idx = Math.min(selIdx, lastIdx);
+  const [show, setShow] = useState<Record<SeriesKey, boolean>>({ income: true, expenses: true, diff: true });
+  const toggle = (k: SeriesKey) => setShow((p) => ({ ...p, [k]: !p[k] }));
 
-  const maxM = Math.max(1, ...months.map((x) => x.v));
   const sel = months[idx];
   const period = sel?.period ?? "";
   const cats = (period && store.expensesByPeriod[period]) || store.expenseCats;
@@ -21,64 +27,136 @@ export default function Expenses() {
   const subs = (period && store.expenseSubs[period]) || {};
   const [openCat, setOpenCat] = useState<string | null>(null);
 
-  const value = sel?.v ?? 0;
-  const prev = idx > 0 ? months[idx - 1].v : value;
-  const delta = prev ? Math.round(((value - prev) / prev) * 100) : 0;
+  const expVal = sel?.v ?? 0;
+  const incVal = sel?.income ?? 0;
+  const diffVal = incVal - expVal;
+  const hasIncome = months.some((m) => (m.income ?? 0) > 0);
+
+  // Bar scale spans whichever value-series are enabled (income + expenses).
+  const scaleVals: number[] = [];
+  months.forEach((m) => {
+    if (show.expenses) scaleVals.push(m.v);
+    if (show.income) scaleVals.push(m.income ?? 0);
+  });
+  const maxM = Math.max(1, ...scaleVals);
+
+  const SERIES: { key: SeriesKey; label: string; color: string }[] = [
+    { key: "income", label: "Доходы", color: "var(--pos)" },
+    { key: "expenses", label: "Расходы", color: "var(--neg)" },
+    { key: "diff", label: "Разница", color: "var(--ink-2)" },
+  ];
+
+  const stats = [
+    { key: "income" as SeriesKey, label: "Доходы", value: incVal, color: "var(--pos)", signed: false },
+    { key: "expenses" as SeriesKey, label: "Расходы", value: expVal, color: "var(--neg)", signed: false },
+    { key: "diff" as SeriesKey, label: "Разница", value: diffVal, color: diffVal >= 0 ? "var(--pos)" : "var(--neg)", signed: true },
+  ].filter((s) => show[s.key]);
 
   return (
     <>
-      <Topbar title="Расходы" sub="Импорт из Google Sheets" right={<Badge src="sheets" />} />
+      <Topbar title="Расходы и доходы" sub="Импорт из Google Sheets" right={<Badge src="sheets" />} />
 
       {months.length === 0 ? (
         <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
-          Нет данных о расходах. Они подтянутся из Google Sheets при синхронизации.
+          Нет данных. Расходы подтянутся из Google Sheets, доходы — из ДДС (дивиденды) при синхронизации.
         </div>
       ) : (
         <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20 }}>
           <div className="card" style={{ padding: 24 }}>
-            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20 }}>
-              <div>
-                <div className="k">Расходы за {sel?.m?.toLowerCase()}</div>
-                <div className="mono" style={{ fontSize: 40, fontWeight: 500, letterSpacing: "-.025em", marginTop: 6, lineHeight: 1 }}>
-                  {fmt(value)}
-                </div>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18, gap: 16, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+                {stats.map((s) => (
+                  <div key={s.key}>
+                    <div className="k">
+                      {s.label} за {sel?.m?.toLowerCase()}
+                    </div>
+                    <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-.02em", marginTop: 6, lineHeight: 1, color: s.color }}>
+                      {s.signed ? fmtSigned(s.value) : fmt(s.value)}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div style={{ paddingBottom: 4 }}>
-                <Chip d={delta} goodOverride /> <span style={{ fontSize: 12, color: "var(--muted)" }}>к прошлому мес.</span>
+              {/* Series toggles */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {SERIES.map((s) => {
+                  const on = show[s.key];
+                  const disabled = s.key === "income" && !hasIncome;
+                  return (
+                    <button
+                      key={s.key}
+                      onClick={() => toggle(s.key)}
+                      title={disabled ? "Доходы появятся после синхронизации ДДС" : undefined}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 11px",
+                        borderRadius: 999,
+                        border: "1px solid var(--hair)",
+                        background: on ? "var(--hair-2)" : "transparent",
+                        cursor: "pointer",
+                        fontFamily: "var(--sans)",
+                        fontSize: 12,
+                        color: on ? "var(--ink)" : "var(--faint)",
+                        opacity: disabled ? 0.5 : 1,
+                      }}
+                    >
+                      <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, opacity: on ? 1 : 0.35 }} />
+                      {s.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 180 }}>
-              {months.map((x, i) => (
-                <button
-                  key={x.period ?? x.m}
-                  onClick={() => setSelIdx(i)}
-                  title={`${x.m}: ${fmt(x.v)}`}
-                  style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 7, justifyContent: "flex-end", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "var(--sans)" }}
-                >
-                  <div
-                    style={{
-                      width: "60%",
-                      maxWidth: 34,
-                      height: `${((x.v / maxM) * 150).toFixed(0)}px`,
-                      background: i === idx ? "var(--neg)" : "var(--hair)",
-                      borderRadius: "4px 4px 0 0",
-                      transition: "background .12s",
-                    }}
-                  />
-                  <span className="axis" style={{ fontFamily: "var(--mono)", fontSize: 10, color: i === idx ? "var(--ink)" : "var(--muted)", fontWeight: i === idx ? 600 : 400 }}>
-                    {x.m}
-                  </span>
-                </button>
-              ))}
+
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 200 }}>
+              {months.map((x, i) => {
+                const xi = x.income ?? 0;
+                const net = xi - x.v;
+                const here = i === idx;
+                return (
+                  <button
+                    key={x.period ?? x.m}
+                    onClick={() => setSelIdx(i)}
+                    title={`${x.m}: расходы ${fmt(x.v)}${xi ? ` · доходы ${fmt(xi)}` : ""}`}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 7, justifyContent: "flex-end", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "var(--sans)" }}
+                  >
+                    {show.diff && (show.income || show.expenses) && (
+                      <span className="mono" style={{ fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here ? 1 : 0.6 }}>
+                        {fmtSigned(net)}
+                      </span>
+                    )}
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 150, width: "100%", justifyContent: "center" }}>
+                      {show.income && (
+                        <div
+                          title={`Доходы ${fmt(xi)}`}
+                          style={{ width: show.expenses ? "30%" : "46%", maxWidth: 22, height: `${((xi / maxM) * 150).toFixed(0)}px`, background: "var(--pos)", borderRadius: "4px 4px 0 0", opacity: here ? 0.95 : 0.4, transition: "opacity .12s" }}
+                        />
+                      )}
+                      {show.expenses && (
+                        <div
+                          title={`Расходы ${fmt(x.v)}`}
+                          style={{ width: show.income ? "30%" : "46%", maxWidth: 22, height: `${((x.v / maxM) * 150).toFixed(0)}px`, background: "var(--neg)", borderRadius: "4px 4px 0 0", opacity: here ? 0.95 : 0.4, transition: "opacity .12s" }}
+                        />
+                      )}
+                    </div>
+                    <span className="axis" style={{ fontFamily: "var(--mono)", fontSize: 10, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400 }}>
+                      {x.m}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <div className="h-sub" style={{ marginTop: 12 }}>
-              Нажмите на столбец месяца, чтобы посмотреть его категории.
+              {hasIncome
+                ? "Зелёный — доходы (дивиденды из ДДС), красный — расходы. Нажмите на месяц, чтобы увидеть его категории."
+                : "Нажмите на столбец месяца, чтобы посмотреть его категории. Доходы появятся после синхронизации ДДС."}
             </div>
           </div>
 
           <div className="card" style={{ padding: 24 }}>
             <div className="k" style={{ marginBottom: 8 }}>
-              Категории за {sel?.m?.toLowerCase()}
+              Категории расходов за {sel?.m?.toLowerCase()}
             </div>
             {cats.length === 0 ? (
               <div className="h-sub">Нет категорий за этот месяц.</div>

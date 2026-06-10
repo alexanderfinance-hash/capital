@@ -19,6 +19,7 @@ export default function Investments() {
   const c = seriesForPeriod(cryptoHistory, period);
   const cr = store.assets.filter((a) => a.bucket === "crypto");
   const crTotal = cr.reduce((s, a) => s + a.value, 0);
+  const other = store.otherInvestments;
 
   return (
     <>
@@ -171,6 +172,30 @@ export default function Investments() {
           </div>
         ))}
       </div>
+
+      {other && other.total > 0 && (
+        <div className="card" style={{ padding: "8px 22px", marginTop: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 4px" }}>
+            <span className="k">Прочие инвестиции</span>
+            <span className="mono" style={{ fontSize: 15, fontWeight: 600 }}>{fmt(other.total)}</span>
+          </div>
+          <div className="h-sub" style={{ padding: "0 0 10px" }}>
+            Вложения в развитие (обучение и т.п.) — из отчёта расходов. Не входят в стоимость портфеля, так как их нельзя продать.
+          </div>
+          {other.items.map((it) => (
+            <div className="mlist-row" key={it.name}>
+              <div className="tile">
+                <Icon name="gem" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{it.name}</div>
+                <div className="k" style={{ fontSize: 9, marginTop: 3 }}>из расходов · по курсу ЦБ</div>
+              </div>
+              <span className="mono" style={{ fontSize: 13.5, fontWeight: 500 }}>{fmt(it.value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {walletModal && <AddPersonalWalletModal onClose={() => setWalletModal(false)} />}
     </>
