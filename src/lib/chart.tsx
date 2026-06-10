@@ -271,10 +271,10 @@ export function Donut({ assets }: { assets: Asset[] }) {
   return (
     <div>
       <div style={{ position: "relative", margin: "4px 0 8px" }}>
-        <svg viewBox="0 0 120 120" style={{ width: 150, height: 150, display: "block", margin: "2px auto 0", transform: "rotate(-90deg)" }}>
+        <svg viewBox="0 0 120 120" style={{ width: 150, height: 150, display: "block", margin: "0 auto", transform: "rotate(-90deg)" }}>
           {circles}
         </svg>
-        <div style={{ position: "absolute", inset: 0, bottom: 24, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <span className="mono" style={{ fontSize: 19, fontWeight: 500 }}>
             {fmtK(T)}
           </span>
