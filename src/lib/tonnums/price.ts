@@ -45,7 +45,14 @@ async function queryGetgems(url: string, field: string, address: string): Promis
   const query = `query($a:String!){ ${field}(address:$a){ floorPrice } }`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      // Browser-like headers: some marketplace edges reject bare requests.
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      Origin: "https://getgems.io",
+      Referer: "https://getgems.io/",
+    },
     body: JSON.stringify({ query, variables: { a: address } }),
     signal: AbortSignal.timeout(TIMEOUT),
   });
