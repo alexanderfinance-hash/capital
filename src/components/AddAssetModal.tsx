@@ -19,6 +19,7 @@ const CATS: CatDef[] = [
   { label: "Наличные", icon: "cash", bucket: "cash", src: "manual" },
   { label: "Автомобиль", icon: "car", bucket: "vehicles", src: "manual" },
   { label: "Ценная вещь", icon: "gem", bucket: "other", src: "manual" },
+  { label: "Счёт / баланс", icon: "building", bucket: "other", src: "manual" },
   { label: "TON номера", icon: "phone", bucket: "other", src: "manual", tonNumber: true },
   { label: "Криптокошелёк", icon: "wallet", bucket: "crypto", src: "sync" },
   { label: "Прочий актив", icon: "box", bucket: "other", src: "manual" },
