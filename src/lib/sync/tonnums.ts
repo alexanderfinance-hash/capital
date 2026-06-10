@@ -8,6 +8,7 @@
 import "server-only";
 import { prisma } from "../prisma";
 import { fetchTonNumberRate } from "../tonnums/price";
+import { defaultProviders, type CryptoProviders } from "../crypto/providers";
 
 /** Symbol used for the TON-number unit price (PriceCache) and on TON-number assets. */
 export const TONNUM_SYMBOL = "TONNUM";
@@ -19,9 +20,18 @@ export interface TonNumSyncResult {
   assetsUpdated: number;
 }
 
-export async function syncTonNumbers(): Promise<TonNumSyncResult> {
+export async function syncTonNumbers(providers: CryptoProviders = defaultProviders): Promise<TonNumSyncResult> {
+  // TON spot price (CMC) to convert the TON-denominated NFT floor to USD.
+  let tonUsd: number | undefined;
+  try {
+    const prices = await providers.prices(["TON"]);
+    tonUsd = prices.get("TON")?.usd;
+  } catch {
+    /* leave undefined; fetchTonNumberRate will error clearly if it's needed */
+  }
+
   // Throws on failure → nothing below runs, last known data is preserved.
-  const rate = await fetchTonNumberRate();
+  const rate = await fetchTonNumberRate(tonUsd);
 
   // Prefer the API's 24h floor change; otherwise derive a delta from the
   // previously cached unit price (best effort).

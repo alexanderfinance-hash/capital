@@ -243,9 +243,11 @@
   Telegram Numbers** в сети TON, поэтому курс = рыночный **флор** этой коллекции.
   Изначально пробовали тянуть с nums888.io, но сайт — JS-приложение за
   Cloudflare-защитой: серверный `fetch` не получает число (значение выходило $0).
-  Перешли на CoinGecko NFT API (`/nfts/anonymous-telegram-numbers`), который
-  отдаёт флор сразу в USD и TON (+ изменение за 24ч) — без скрейпинга и без
-  ручной конвертации. Провайдер `src/lib/tonnums/price.ts`; синк
+  Источник — публичный GraphQL API **getgems** (канонический TON-маркетплейс, те
+  же данные, что у трекеров вроде nums888): берём флор коллекции в TON и переводим
+  в USD по споту TON (CMC). Провайдер `src/lib/tonnums/price.ts` пробует известные
+  поля статистики (`nftCollectionStats`/`alphaNftCollectionStats`). Для диагностики
+  есть GET `/api/sync/tonnums` (под сессией) — показывает, что вернул источник. Синк
   `src/lib/sync/tonnums.ts` → эндпоинт `/api/sync/tonnums` кэширует цену
   (`PriceCache["TONNUM"]`), переоценивает все TON-номерные активы и пишет
   `SyncState["tonnums"]`. Воркер дёргает синк по расписанию
