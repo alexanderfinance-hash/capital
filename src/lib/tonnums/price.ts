@@ -1,62 +1,93 @@
 /* TON anonymous-number unit price provider.
  *
- * Returns the live rate of one anonymous TON (+888) number in USD. An anonymous
- * number is an NFT in the "Anonymous Telegram Numbers" collection on TON, so the
- * rate is the collection's market FLOOR price. We read it from CoinGecko's NFT
- * API, which returns the floor directly in both USD and TON (plus 24h change) —
- * no HTML scraping, no manual TON→USD conversion.
+ * The rate of one anonymous TON (+888) number = the market FLOOR price of the
+ * "Anonymous Telegram Numbers" NFT collection on TON. Getgems is the canonical
+ * TON NFT marketplace (the same data third-party trackers like nums888.io show),
+ * and exposes collection stats over a public GraphQL API. We read the floor from
+ * there and convert TON→USD with the TON spot price (CMC, same feed as crypto).
  *
- * On a hard failure (network down, non-2xx, price missing) the fetcher THROWS
- * so the sync layer keeps the last known cached price instead of zeroing it
- * (PRD §7). Network access to api.coingecko.com is required (open network;
- * blocked in restricted sandboxes).
+ * On a hard failure (network/HTTP error, floor missing) the fetcher THROWS so the
+ * sync layer keeps the last known cached price instead of zeroing it (PRD §7).
+ * Network access to api.getgems.io is required (open network; blocked in
+ * restricted sandboxes).
  *
  * Configuration (all optional — sensible defaults if empty):
- *   TONNUM_PRICE_USD          hard override in USD per number (skips the network)
- *   TONNUM_COINGECKO_NFT_ID   CoinGecko NFT id (default "anonymous-telegram-numbers")
- *   COINGECKO_API_URL         API base (default https://api.coingecko.com/api/v3;
- *                             for a Pro key use https://pro-api.coingecko.com/api/v3)
- *   COINGECKO_API_KEY         CoinGecko key (sent as x-cg-demo-api-key, or
- *                             x-cg-pro-api-key when COINGECKO_API_URL is the pro host)
+ *   TONNUM_PRICE_USD            hard override in USD per number (skips the network)
+ *   TONNUM_COLLECTION_ADDRESS   TON collection address (default = Anonymous Numbers)
+ *   GETGEMS_API_URL             GraphQL endpoint (default https://api.getgems.io/graphql)
  */
 import "server-only";
 
 const TIMEOUT = 12000;
 
+// "Anonymous Telegram Numbers" collection on TON.
+const DEFAULT_COLLECTION = "EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N";
+
+// Getgems stats fields have used a couple of names over time; try each.
+const STAT_FIELDS = ["nftCollectionStats", "alphaNftCollectionStats"];
+
 export interface TonNumberRate {
   usd: number; // floor price of one number in USD
-  ton: number | null; // floor price in TON, when known
+  ton: number | null; // floor price in TON
   change24h: number | null; // 24h floor change %, when known
-  source: string; // "override" | "coingecko"
+  source: string; // "override" | "getgems"
+  debug?: string; // short diagnostic (upstream shape/errors) for the debug endpoint
 }
 
-export async function fetchTonNumberRate(): Promise<TonNumberRate> {
+/** Floor figures come back as TON or as nanoton (1e9). Normalise to TON. */
+function toTon(raw: unknown): number | null {
+  const n = Number(raw);
+  if (!isFinite(n) || n <= 0) return null;
+  return n > 1e6 ? n / 1e9 : n; // big number ⇒ nanoton
+}
+
+async function queryGetgems(url: string, field: string, address: string): Promise<{ floorTon: number | null; body: string }> {
+  const query = `query($a:String!){ ${field}(address:$a){ floorPrice } }`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ query, variables: { a: address } }),
+    signal: AbortSignal.timeout(TIMEOUT),
+  });
+  const text = await res.text();
+  if (!res.ok) return { floorTon: null, body: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+  let j: any;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    return { floorTon: null, body: `non-JSON: ${text.slice(0, 200)}` };
+  }
+  const floor = j?.data?.[field]?.floorPrice;
+  return { floorTon: toTon(floor), body: text.slice(0, 200) };
+}
+
+/** Fetch the current floor price of one anonymous TON number, in USD.
+ *  `tonUsd` is the TON spot price, used to convert the TON-denominated floor. */
+export async function fetchTonNumberRate(tonUsd?: number): Promise<TonNumberRate> {
   // Manual pin: skip the network entirely (useful if the API is unreachable).
   const override = Number(process.env.TONNUM_PRICE_USD);
-  if (override > 0) return { usd: override, ton: null, change24h: null, source: "override" };
+  if (override > 0) return { usd: override, ton: tonUsd && tonUsd > 0 ? override / tonUsd : null, change24h: null, source: "override" };
 
-  const base = (process.env.COINGECKO_API_URL || "https://api.coingecko.com/api/v3").replace(/\/$/, "");
-  const id = process.env.TONNUM_COINGECKO_NFT_ID || "anonymous-telegram-numbers";
+  const url = process.env.GETGEMS_API_URL || "https://api.getgems.io/graphql";
+  const address = process.env.TONNUM_COLLECTION_ADDRESS || DEFAULT_COLLECTION;
 
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (process.env.COINGECKO_API_KEY) {
-    const header = base.includes("pro-api") ? "x-cg-pro-api-key" : "x-cg-demo-api-key";
-    headers[header] = process.env.COINGECKO_API_KEY;
+  const tries: string[] = [];
+  let floorTon: number | null = null;
+  for (const field of STAT_FIELDS) {
+    try {
+      const r = await queryGetgems(url, field, address);
+      tries.push(`${field}: ${r.floorTon != null ? r.floorTon + " TON" : r.body}`);
+      if (r.floorTon != null) {
+        floorTon = r.floorTon;
+        break;
+      }
+    } catch (e) {
+      tries.push(`${field}: ${String(e).slice(0, 120)}`);
+    }
   }
 
-  const res = await fetch(`${base}/nfts/${encodeURIComponent(id)}`, { headers, signal: AbortSignal.timeout(TIMEOUT) });
-  if (!res.ok) throw new Error("coingecko nft " + res.status);
-  const j: any = await res.json();
+  if (floorTon == null) throw new Error("getgems floor not found · " + tries.join(" | "));
+  if (!tonUsd || tonUsd <= 0) throw new Error("no TON spot price for TON→USD conversion (floor=" + floorTon + " TON)");
 
-  const usd = Number(j?.floor_price?.usd);
-  if (!isFinite(usd) || usd <= 0) throw new Error("coingecko nft floor missing");
-  const tonRaw = Number(j?.floor_price?.native_currency);
-  const changeRaw = Number(j?.floor_price_24h_percentage_change?.usd);
-
-  return {
-    usd,
-    ton: isFinite(tonRaw) && tonRaw > 0 ? tonRaw : null,
-    change24h: isFinite(changeRaw) ? Math.round(changeRaw * 10) / 10 : null,
-    source: "coingecko",
-  };
+  return { usd: floorTon * tonUsd, ton: floorTon, change24h: null, source: "getgems", debug: tries.join(" | ") };
 }
