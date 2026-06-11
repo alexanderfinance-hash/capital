@@ -16,6 +16,7 @@
 }
 
 :root{
+  color-scheme:light;
   --ink:#16181d;
   --ink-2:#474c55;
   --muted:#8a909b;
@@ -41,6 +42,9 @@
 *{box-sizing:border-box;}
 html,body{margin:0;height:100%;background:#f4f3f0;}
 body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;}
+/* Кнопки/инпуты не наследуют color по умолчанию (UA даёт чёрный) — из-за этого
+   цифры внутри них оставались чёрными в тёмной теме. */
+button,input,select,textarea{color:inherit;}
 .ds{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;}
 .ds *{box-sizing:border-box;}
 
@@ -149,6 +153,7 @@ body[data-density="compact"] .ds main{padding:22px 26px!important;}
 
 /* ============ DARK THEME ============ */
 body[data-theme="dark"]{
+  color-scheme:dark;
   --ink:#eef0f3; --ink-2:#b4b9c2; --muted:#878d99; --faint:#5a6069;
   --surface:#181b21; --surface-2:#1f232a; --hair:#2c313a; --hair-2:#262a31;
   --pos-bg:#16291f; --neg:#e0796f; --neg-bg:#2b1f1d; --sync:#7aa6da;
