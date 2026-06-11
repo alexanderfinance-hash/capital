@@ -26,7 +26,14 @@ function LoginForm() {
         router.refresh();
         return;
       }
-      setError(res.status === 401 ? "Неверный пароль" : "Ошибка сервера. Проверьте, что выполнен «npx prisma generate».");
+      if (res.status === 401) {
+        setError("Неверный пароль");
+      } else if (res.status === 429) {
+        const retry = Number(res.headers.get("Retry-After")) || 60;
+        setError(`Слишком много попыток входа. Повторите через ${retry} с.`);
+      } else {
+        setError("Ошибка сервера. Проверьте, что выполнен «npx prisma generate».");
+      }
     } catch {
       setError("Не удалось связаться с сервером");
     }
