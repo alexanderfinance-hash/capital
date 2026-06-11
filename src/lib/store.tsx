@@ -33,6 +33,7 @@ interface AppState {
   deleteAsset: (id: string) => void;
   setAssetAmount: (id: string, amount: number) => void;
   setAssetNative: (id: string, nativeValue: number) => void;
+  setAssetInvestment: (id: string, investment: boolean) => void;
   tonNumberRate: TonNumberRate;
   usdRub: number;
   personalWallets: PersonalWalletRow[];
@@ -178,6 +179,11 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     },
     [usdRub]
   );
+
+  const setAssetInvestment = useCallback((id: string, investment: boolean) => {
+    setStore((prev) => ({ ...prev, assets: prev.assets.map((x) => (x.id === id ? { ...x, investment } : x)) }));
+    api("PATCH", `/api/assets/${id}`, { investment });
+  }, []);
 
   const addDividend = useCallback((d: Dividend) => {
     setStore((prev) => {
@@ -347,6 +353,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     deleteAsset,
     setAssetAmount,
     setAssetNative,
+    setAssetInvestment,
     tonNumberRate,
     usdRub,
     personalWallets,

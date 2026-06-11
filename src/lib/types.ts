@@ -15,6 +15,7 @@ export interface Asset {
   symbol?: string | null; // coin ticker (crypto)
   currency?: string; // "USD" | "RUB" — currency the value was entered in
   nativeValue?: number | null; // original amount in `currency` (when not USD)
+  investment?: boolean; // tracked on the Инвестиции tab ("Другие инвестиции")
   src: DataSource;
   bucket: AssetBucket;
 }

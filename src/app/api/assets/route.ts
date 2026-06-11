@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string; currency?: string; nativeValue?: number } = {};
+  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string; currency?: string; nativeValue?: number; investment?: boolean } = {};
   try {
     b = await req.json();
   } catch {
@@ -19,6 +19,8 @@ export async function POST(req: Request) {
   const isTonNumber = b.symbol === TONNUM_SYMBOL;
   const amount = b.amount == null ? null : Number(b.amount);
   const currency = b.currency === "RUB" ? "RUB" : "USD";
+  // TON numbers are investments by default; otherwise honor the client's choice.
+  const investment = isTonNumber ? b.investment !== false : b.investment === true;
 
   // TON numbers are quantity-driven: validate the count, then price it from the
   // last synced unit rate (the tonnums sync keeps it fresh afterwards).
@@ -59,6 +61,7 @@ export async function POST(req: Request) {
         symbol: b.symbol || null,
         currency,
         nativeValue,
+        investment,
         source: (b.src as "sync" | "sheets" | "manual") || "manual",
         bucket: (b.bucket as "crypto" | "vehicles" | "cash" | "other") || "other",
       },

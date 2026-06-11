@@ -12,11 +12,23 @@ export const runtime = "nodejs";
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { amount?: number; nativeValue?: number } = {};
+  let b: { amount?: number; nativeValue?: number; investment?: boolean } = {};
   try {
     b = await req.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  // Toggle whether the asset is tracked on the Инвестиции tab.
+  if (typeof b.investment === "boolean") {
+    try {
+      const asset = await prisma.asset.findFirst({ where: { OR: [{ slug: params.id }, { id: params.id }] } });
+      if (!asset) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      await prisma.asset.update({ where: { id: asset.id }, data: { investment: b.investment } });
+      return NextResponse.json({ ok: true, investment: b.investment });
+    } catch {
+      return NextResponse.json({ persisted: false }, { status: 503 });
+    }
   }
 
   // RUB asset: update the ruble amount, recompute USD value.

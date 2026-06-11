@@ -31,6 +31,7 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [val, setVal] = useState("");
   const [cur, setCur] = useState<"USD" | "RUB">("USD");
+  const [invest, setInvest] = useState(false);
   const [err, setErr] = useState(false);
   const [show, setShow] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -48,6 +49,8 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
   const unit = tonNumberRate.usd;
   // Currency choice applies to value-based manual assets (cash / car / valuables / other).
   const showCurrency = !c.tonNumber && c.src === "manual";
+  // Manual value assets can be flagged as investments (TON numbers always are).
+  const showInvest = !c.tonNumber && c.src === "manual";
   const isRub = showCurrency && cur === "RUB";
   const parsed = parseFloat((val || "").replace(/[^\d.]/g, "")) || 0;
   const previewUsd = isRub && usdRub > 0 ? Math.round(parsed / usdRub) : 0;
@@ -63,7 +66,7 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
       const finalName = name.trim() || c.label;
       // Value is priced from the latest rate; the server re-prices and the
       // tonnums sync keeps it fresh afterwards.
-      addAsset({ icon: c.icon, name: finalName, value: unit > 0 ? Math.round(qty * unit) : 0, delta: null, amount: qty, symbol: "TONNUM", src: "manual", bucket: c.bucket });
+      addAsset({ icon: c.icon, name: finalName, value: unit > 0 ? Math.round(qty * unit) : 0, delta: null, amount: qty, symbol: "TONNUM", src: "manual", bucket: c.bucket, investment: true });
       onClose();
       toast(`Добавлено: ${finalName} · ${fmtTonNumbers(qty)}`);
       return;
@@ -72,12 +75,12 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
     if (isRub) {
       // Store the original RUB amount; value is shown in USD at the current CBR rate.
       const usd = usdRub > 0 ? Math.round(n / usdRub) : n;
-      addAsset({ icon: c.icon, name: finalName, value: usd, delta: null, currency: "RUB", nativeValue: n, src: c.src, bucket: c.bucket });
+      addAsset({ icon: c.icon, name: finalName, value: usd, delta: null, currency: "RUB", nativeValue: n, src: c.src, bucket: c.bucket, investment: invest });
       onClose();
       toast(`Добавлено: ${finalName} · ${fmtRub(n)} ≈ ${fmt(usd)}`);
       return;
     }
-    addAsset({ icon: c.icon, name: finalName, value: n, delta: c.src === "sync" ? 0 : null, currency: "USD", src: c.src, bucket: c.bucket });
+    addAsset({ icon: c.icon, name: finalName, value: n, delta: c.src === "sync" ? 0 : null, currency: "USD", src: c.src, bucket: c.bucket, investment: invest });
     onClose();
     toast(`Добавлено: ${finalName} · ${fmt(n)}`);
   };
@@ -145,6 +148,18 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
                 <>Введите сумму в рублях — покажу её в долларах по актуальному курсу ЦБ.</>
               )}
             </div>
+          )}
+          {showInvest && (
+            <button
+              type="button"
+              onClick={() => setInvest((v) => !v)}
+              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: "none", border: "1px solid var(--hair)", borderRadius: 9, padding: "10px 12px", cursor: "pointer", fontFamily: "var(--sans)" }}
+            >
+              <span style={{ width: 34, height: 20, borderRadius: 999, background: invest ? "var(--pos)" : "var(--hair)", position: "relative", flex: "none", transition: "background .15s" }}>
+                <span style={{ position: "absolute", top: 2, left: invest ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s", boxShadow: "0 1px 2px rgba(0,0,0,.2)" }} />
+              </span>
+              <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>Учитывать как инвестицию — показывать во вкладке «Инвестиции»</span>
+            </button>
           )}
           {c.tonNumber && (
             <div className="hint" style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
