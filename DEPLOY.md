@@ -107,6 +107,27 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f worker #
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down    # остановить
 ```
 
+## Смена пароля входа
+
+Пароль входа хранится в базе (bcrypt-хэш), поэтому правка `APP_PASSWORD` в
+`.env` сама по себе пароль уже работающего дашборда **не меняет**.
+
+**Без захода на сервер (рекомендуется):**
+1. Репозиторий → **Settings → Secrets and variables → Actions → New repository
+   secret**: имя `NEW_APP_PASSWORD`, значение — новый пароль.
+2. Вкладка **Actions → Change password → Run workflow**.
+3. Готово — вход сразу по новому паролю. Секрет после смены можно удалить.
+
+Workflow обновляет хэш в БД (`prisma/set-password.ts`) и синхронизирует
+`APP_PASSWORD` в `.env` на сервере; данные дашборда не затрагиваются.
+Предусловия те же, что у авто-деплоя: секреты `VPS_*` и `DEPLOY_ENABLED=true`.
+
+**Вручную по SSH (альтернатива):**
+```bash
+cd capital
+docker exec capital-app-1 npx tsx prisma/set-password.ts "НовыйПароль"
+```
+
 ## Безопасность
 - Порты Postgres (5432) и приложения (3000) слушают только localhost —
   наружу открыты лишь 80/443 (Caddy, HTTPS).
