@@ -1,7 +1,7 @@
 /* ===== Strict capital dashboard — shared styles (ported from prototype) ===== */
 
-/* IBM Plex Mono самохостится (полная сборка с GitHub): версия с Google Fonts
-   вырезает OpenType-фичи, а нам нужна ss04 — «чистый» ноль без точки. */
+/* IBM Plex Mono самохостится (полная сборка с GitHub; в файлы впаян ноль
+   без точки — глиф ss04 сделан нулём по умолчанию). */
 @font-face{
   font-family:"IBM Plex Mono";font-style:normal;font-weight:400;font-display:swap;
   src:url("/fonts/IBMPlexMono-Regular.woff2") format("woff2");
@@ -40,15 +40,13 @@
 }
 *{box-sizing:border-box;}
 html,body{margin:0;height:100%;background:#f4f3f0;}
-/* ss04 наследуется всеми элементами: для Plex Mono это ноль без точки,
-   на Plex Sans (Google Fonts, фичи вырезаны) не влияет. */
-body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;font-feature-settings:"ss04" 1;}
-.ds{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;font-feature-settings:"ss04" 1;}
+body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;}
+.ds{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;}
 .ds *{box-sizing:border-box;}
 
 /* type helpers */
 .k{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;}
-.mono{font-family:var(--mono);font-feature-settings:"tnum" 1,"ss04" 1;letter-spacing:-.01em;}
+.mono{font-family:var(--mono);font-feature-settings:"tnum" 1;letter-spacing:-.01em;}
 .h-title{font-size:21px;font-weight:600;letter-spacing:-.01em;margin:0;}
 .h-sub{font-size:12.5px;color:var(--muted);margin:2px 0 0;}
 
