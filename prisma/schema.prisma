@@ -78,6 +78,9 @@ model Asset {
   /// original amount in `nativeValue` and are shown in USD at the current CBR rate.
   currency    String   @default("USD")
   nativeValue Decimal? @db.Decimal(18, 2) // original amount in `currency` (when not USD)
+  /// Show this asset on the Инвестиции tab (in "Другие инвестиции"). Crypto and
+  /// TON numbers default to true; other manual assets default to false.
+  investment  Boolean  @default(false)
   source    DataSource
   bucket    AssetBucket
   createdAt DateTime    @default(now())

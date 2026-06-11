@@ -10,7 +10,7 @@ import { AddAssetModal } from "../AddAssetModal";
 import type { Asset } from "@/lib/types";
 
 export default function Assets() {
-  const { store, personalTotal, deleteAsset, setAssetAmount, setAssetNative, tonNumberRate, toast } = useApp();
+  const { store, personalTotal, deleteAsset, setAssetAmount, setAssetNative, setAssetInvestment, tonNumberRate, toast } = useApp();
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
@@ -65,6 +65,9 @@ export default function Assets() {
             // Everything the user added is removable; only sync-managed coins
             // (crypto bucket with a ticker) are protected.
             const removable = !(a.bucket === "crypto" && !!a.symbol);
+            // Manual assets can be marked as investments (crypto already is).
+            const canFlag = a.bucket !== "crypto";
+            const inInvest = !!a.investment;
             return (
               <div className="mlist-row" key={a.id}>
                 <div className="tile">
@@ -128,11 +131,23 @@ export default function Assets() {
                     </div>
                   </div>
                 )}
+                {canFlag ? (
+                  <button
+                    title={inInvest ? "В инвестициях — нажмите, чтобы убрать" : "Добавить во вкладку «Инвестиции»"}
+                    onClick={() => {
+                      setAssetInvestment(a.id, !inInvest);
+                      toast(inInvest ? `${a.name}: убрано из инвестиций` : `${a.name}: учитывается в инвестициях`);
+                    }}
+                    style={{ marginLeft: 12, background: "none", border: "none", cursor: "pointer", color: inInvest ? "var(--pos)" : "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
+                  >
+                    <Icon name="trend" style={{ width: 16, height: 16 }} />
+                  </button>
+                ) : null}
                 {editable ? (
                   <button
                     title={isTon ? "Изменить количество" : "Изменить сумму в рублях"}
                     onClick={() => (editing ? saveEdit(a) : startEdit(a))}
-                    style={{ marginLeft: 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
+                    style={{ marginLeft: canFlag ? 4 : 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
                   >
                     <Icon name="sliders" style={{ width: 16, height: 16 }} />
                   </button>
@@ -144,7 +159,7 @@ export default function Assets() {
                       deleteAsset(a.id);
                       toast(`Удалено: ${a.name}`);
                     }}
-                    style={{ marginLeft: editable ? 4 : 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
+                    style={{ marginLeft: editable || canFlag ? 4 : 12, background: "none", border: "none", cursor: "pointer", color: "var(--faint)", padding: 4, display: "grid", placeItems: "center" }}
                   >
                     <Icon name="close" style={{ width: 16, height: 16 }} />
                   </button>

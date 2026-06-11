@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useApp } from "@/lib/store";
 import { PERIODS } from "@/lib/mockData";
-import { fmt, fmtAmount } from "@/lib/format";
+import { fmt, fmtAmount, fmtTonNumbers, fmtRub } from "@/lib/format";
 import { LineChart, Chip, Badge, ChartEmpty, seriesForPeriod } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow, SyncStamp } from "../ui";
@@ -12,7 +12,7 @@ import { AddPersonalWalletModal } from "../AddPersonalWalletModal";
 const CHAIN_LABEL: Record<string, string> = { BTC: "Bitcoin", ETH: "Ethereum", TRX: "Tron", TON: "TON" };
 
 export default function Investments() {
-  const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast, cryptoHistory } = useApp();
+  const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast, cryptoHistory, tonNumberRate } = useApp();
   const [period, setPeriod] = useState("6М");
   const [openSym, setOpenSym] = useState<string | null>(null);
   const [walletModal, setWalletModal] = useState(false);
@@ -20,6 +20,9 @@ export default function Investments() {
   const cr = store.assets.filter((a) => a.bucket === "crypto");
   const crTotal = cr.reduce((s, a) => s + a.value, 0);
   const other = store.otherInvestments;
+  // Non-crypto assets the user marked as investments (e.g. TON numbers).
+  const otherInv = store.assets.filter((a) => a.investment && a.bucket !== "crypto");
+  const otherInvTotal = otherInv.reduce((s, a) => s + a.value, 0);
 
   return (
     <>
@@ -138,6 +141,46 @@ export default function Investments() {
           );
         })}
       </div>
+
+      {otherInv.length > 0 && (
+        <div className="card" style={{ padding: "8px 22px", marginTop: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 4px" }}>
+            <span className="k">Другие инвестиции</span>
+            <span className="mono" style={{ fontSize: 15, fontWeight: 600 }}>{fmt(otherInvTotal)}</span>
+          </div>
+          <div className="h-sub" style={{ padding: "0 0 8px" }}>
+            Активы вне криптопортфеля, отмеченные как инвестиции. Переключить можно на странице «Активы» (зелёная иконка).
+          </div>
+          {otherInv.map((a) => {
+            const isTon = a.symbol === "TONNUM";
+            return (
+              <div className="mlist-row" key={a.id}>
+                <div className="tile">
+                  <Icon name={a.icon} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
+                  <div className="mono" style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                    {isTon
+                      ? `${fmtTonNumbers(a.amount ?? 0)}${tonNumberRate.usd > 0 ? ` · курс ${fmt(tonNumberRate.usd)}/номер` : ""}`
+                      : a.currency === "RUB" && a.nativeValue != null
+                      ? `${fmtRub(a.nativeValue)} · по курсу ЦБ`
+                      : "вручную"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 500 }}>{fmt(a.value)}</div>
+                  {a.delta != null && (
+                    <div style={{ marginTop: 2 }}>
+                      <Chip d={a.delta} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="card" style={{ padding: "8px 22px", marginTop: 20 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 8px" }}>
