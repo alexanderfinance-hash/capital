@@ -9,11 +9,48 @@ import { Topbar } from "../ui";
 import { AddAssetModal } from "../AddAssetModal";
 import type { Asset } from "@/lib/types";
 
+/* Collapsible groups (как категории расходов): крипта, TON номера, машины и т.д. */
+const GROUP_DEFS: { key: string; name: string; icon: string; match: (a: Asset) => boolean }[] = [
+  { key: "crypto", name: "Крипта", icon: "coins", match: (a) => a.bucket === "crypto" && a.symbol !== "TONNUM" },
+  { key: "tonnum", name: "TON номера", icon: "phone", match: (a) => a.symbol === "TONNUM" },
+  { key: "vehicles", name: "Машины", icon: "car", match: (a) => a.bucket === "vehicles" },
+  { key: "cash", name: "Наличные", icon: "cash", match: (a) => a.bucket === "cash" },
+];
+
+const pluralAssets = (n: number) => {
+  const m10 = n % 10,
+    m100 = n % 100;
+  const w = m10 === 1 && m100 !== 11 ? "актив" : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? "актива" : "активов";
+  return `${n} ${w}`;
+};
+
+/* Weighted group delta: восстанавливаем «вчерашнюю» стоимость из value/(1+d) по
+   активам, у которых есть delta, и считаем общий % изменения группы. */
+function groupDelta(items: Asset[]): number | null {
+  let cur = 0,
+    prev = 0;
+  items.forEach((a) => {
+    if (a.delta == null) return;
+    cur += a.value;
+    prev += a.value / (1 + a.delta / 100);
+  });
+  if (prev <= 0) return null;
+  return +(((cur - prev) / prev) * 100).toFixed(1);
+}
+
 export default function Assets() {
   const { store, personalTotal, deleteAsset, setAssetAmount, setAssetNative, setAssetInvestment, tonNumberRate, toast } = useApp();
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const toggleGroup = (key: string) => setOpenGroups((p) => ({ ...p, [key]: !p[key] }));
+
+  const groups = [...GROUP_DEFS.map((g) => ({ ...g, items: [] as Asset[] })), { key: "other", name: "Прочее", icon: "box", match: () => true, items: [] as Asset[] }];
+  store.assets.forEach((a) => {
+    (groups.find((g) => g.match(a)) ?? groups[groups.length - 1]).items.push(a);
+  });
+  const visibleGroups = groups.filter((g) => g.items.length > 0);
 
   const isRubAsset = (a: Asset) => a.currency === "RUB" && a.nativeValue != null;
   const startEdit = (a: Asset) => {
@@ -57,7 +94,41 @@ export default function Assets() {
               Пока нет активов. Нажмите «+ Добавить актив» (наличные, авто, ценные вещи, TON номера). Крипта появится автоматически после синхронизации.
             </div>
           )}
-          {store.assets.map((a) => {
+          {visibleGroups.map((g) => {
+            const isOpen = !!openGroups[g.key];
+            const total = g.items.reduce((s, a) => s + a.value, 0);
+            return (
+              <div key={g.key}>
+                <div
+                  className="mlist-row"
+                  style={{ cursor: "pointer", userSelect: "none" }}
+                  onClick={() => toggleGroup(g.key)}
+                >
+                  <span
+                    style={{ flex: "none", width: 12, color: "var(--faint)", fontSize: 14, transition: "transform .15s", transform: `rotate(${isOpen ? 90 : 0}deg)` }}
+                  >
+                    ›
+                  </span>
+                  <div className="tile">
+                    <Icon name={g.icon} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>{g.name}</div>
+                    <div className="mono" style={{ marginTop: 3, fontSize: 11.5, color: "var(--muted)" }}>
+                      {pluralAssets(g.items.length)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="mono" style={{ fontSize: 15, fontWeight: 600 }}>
+                      {fmt(total)}
+                    </div>
+                    <div style={{ marginTop: 2 }}>
+                      <Chip d={groupDelta(g.items)} />
+                    </div>
+                  </div>
+                </div>
+                {isOpen &&
+                  g.items.map((a) => {
             const isTon = a.symbol === "TONNUM";
             const isRub = isRubAsset(a);
             const editable = isTon || isRub;
@@ -69,7 +140,7 @@ export default function Assets() {
             const canFlag = a.bucket !== "crypto";
             const inInvest = !!a.investment;
             return (
-              <div className="mlist-row" key={a.id}>
+              <div className="mlist-row" key={a.id} style={{ paddingLeft: 24 }}>
                 <div className="tile">
                   <Icon name={a.icon} />
                 </div>
@@ -166,6 +237,9 @@ export default function Assets() {
                 ) : (
                   <span style={{ width: 16, marginLeft: 12 }} />
                 )}
+              </div>
+            );
+          })}
               </div>
             );
           })}
