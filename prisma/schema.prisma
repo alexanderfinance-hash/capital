@@ -172,6 +172,18 @@ model ExpenseWeek {
   @@index([weekEnd])
 }
 
+/// Expense breakdown by subcategory per week (for the expandable tree in weekly mode).
+model ExpenseWeekSubcategory {
+  id      String  @id @default(cuid())
+  weekEnd String  // "YYYY-MM-DD"
+  parent  String  // Статья
+  name    String  // Подстатья
+  value   Decimal @db.Decimal(18, 2) // USD
+
+  @@unique([weekEnd, parent, name])
+  @@index([weekEnd, parent])
+}
+
 /// Expense breakdown by category for a given week.
 model ExpenseWeekCategory {
   id      String  @id @default(cuid())

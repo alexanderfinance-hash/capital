@@ -111,6 +111,7 @@ export interface PersonalStore {
   expenseMonths: ExpenseMonth[];
   expenseWeeks: ExpenseWeek[];
   expenseWeeksByPeriod: Record<string, ExpenseCat[]>; // weekEnd → categories
+  expenseWeekSubs: Record<string, Record<string, SubCat[]>>; // weekEnd → parent → subs
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
   dividendsList: Dividend[];
@@ -185,6 +186,7 @@ export interface PersonalData {
   expenseMonths: ExpenseMonth[];
   expenseWeeks: ExpenseWeek[];
   expenseWeeksByPeriod: Record<string, ExpenseCat[]>;
+  expenseWeekSubs: Record<string, Record<string, SubCat[]>>;
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
   personalWallets: PersonalWalletRow[];
