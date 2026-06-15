@@ -39,6 +39,12 @@ export interface ExpenseMonth {
   period?: string; // "YYYY-MM"
 }
 
+export interface ExpenseWeek {
+  w: string;      // label "01.06–07.06"
+  v: number;      // expenses USD
+  weekEnd: string; // "YYYY-MM-DD"
+}
+
 /** Expense rows reclassified as investments (education etc.). Shown on
  *  Инвестиции separately and NOT counted in the portfolio total. */
 export interface OtherInvestmentItem {
@@ -103,6 +109,8 @@ export interface PersonalStore {
   expensesByPeriod: Record<string, ExpenseCat[]>;
   expenseSubs: Record<string, Record<string, SubCat[]>>; // period → parent → subs
   expenseMonths: ExpenseMonth[];
+  expenseWeeks: ExpenseWeek[];
+  expenseWeeksByPeriod: Record<string, ExpenseCat[]>; // weekEnd → categories
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
   dividendsList: Dividend[];
@@ -175,6 +183,8 @@ export interface PersonalData {
   expensesByPeriod: Record<string, ExpenseCat[]>;
   expenseSubs: Record<string, Record<string, SubCat[]>>;
   expenseMonths: ExpenseMonth[];
+  expenseWeeks: ExpenseWeek[];
+  expenseWeeksByPeriod: Record<string, ExpenseCat[]>;
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
   personalWallets: PersonalWalletRow[];

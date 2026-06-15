@@ -162,6 +162,26 @@ model ExpenseCategory {
   @@unique([period, name])
 }
 
+/// Weekly expense totals (last ~12 weeks, from Google Sheets).
+model ExpenseWeek {
+  id      String  @id @default(cuid())
+  label   String  // "01.06–07.06"
+  weekEnd String  @unique // "YYYY-MM-DD"
+  value   Decimal @db.Decimal(18, 2) // USD
+
+  @@index([weekEnd])
+}
+
+/// Expense breakdown by category for a given week.
+model ExpenseWeekCategory {
+  id      String  @id @default(cuid())
+  weekEnd String  // "YYYY-MM-DD"
+  name    String
+  value   Decimal @db.Decimal(18, 2) // USD
+
+  @@unique([weekEnd, name])
+}
+
 /// Expense breakdown by subcategory (Подстатья) within a category, per period.
 model ExpenseSubcategory {
   id     String  @id @default(cuid())
