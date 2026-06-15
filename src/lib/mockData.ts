@@ -63,6 +63,8 @@ export const initialStore: PersonalStore = {
     { date: "20 янв", name: "USDT lending", amount: 1530 },
   ],
   otherInvestments: { total: 0, items: [] },
+  expenseWeeks: [],
+  expenseWeeksByPeriod: {},
 };
 
 // Demo income so the расходы/доходы chart has a second series in dev (no DB).

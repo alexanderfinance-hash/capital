@@ -100,13 +100,22 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     return rub / r;
   };
 
-  // 4) Walk category rows, accumulate USD per month and per category.
+  // 4) Walk category rows, accumulate USD per month, per week, and per category.
   type MonthKey = string; // "YYYY-MM"
   const monthTotal = new Map<MonthKey, number>();
   const monthMeta = new Map<MonthKey, { year: number; month: number }>();
   const catByMonth = new Map<MonthKey, Map<string, number>>();
   // period → parent → subName → usd
   const subByMonth = new Map<MonthKey, Map<string, Map<string, number>>>();
+
+  // Weekly accumulators: weekEnd ISO → total USD and categories
+  const weekTotal = new Map<string, number>();
+  const catByWeek = new Map<string, Map<string, number>>();
+  // Initialise week buckets
+  for (const w of weekCols) {
+    weekTotal.set(w.endISO, 0);
+    catByWeek.set(w.endISO, new Map());
+  }
   // Reclassified-as-investment subcategories (kept out of expenses entirely).
   // period → total usd, and period → parent → usd (to deduct from category totals).
   const investTotalByMonth = new Map<MonthKey, number>();
@@ -165,6 +174,10 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
       monthTotal.set(key, (monthTotal.get(key) || 0) + usd);
       const cm = catByMonth.get(key)!;
       cm.set(name, (cm.get(name) || 0) + usd);
+      // Weekly accumulation
+      weekTotal.set(w.endISO, (weekTotal.get(w.endISO) || 0) + usd);
+      const wm = catByWeek.get(w.endISO)!;
+      wm.set(name, (wm.get(name) || 0) + usd);
     }
   }
 
@@ -183,10 +196,31 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     }
   }
 
+  // 4c) Deduct reclassified investments from weekly totals/categories too.
+  // We track which weekCols belong to which invest subcats and subtract accordingly.
+  // Re-walk rows to find invest subcat weekly amounts and deduct.
+  for (let r = 1; r < rows.length; r++) {
+    const name = (rows[r]?.[0] || "").trim();
+    const parent = subToParent.get(name);
+    if (!parent || !investSubcats.has(name)) continue;
+    for (const w of weekCols) {
+      const rub = Math.abs(parseNum(rows[r][w.c]));
+      if (!rub) continue;
+      const usd = usdOf(rub, w.endISO);
+      weekTotal.set(w.endISO, Math.max(0, (weekTotal.get(w.endISO) || 0) - usd));
+      const wm = catByWeek.get(w.endISO);
+      if (wm && wm.has(parent)) wm.set(parent, Math.max(0, (wm.get(parent) || 0) - usd));
+    }
+  }
+
   // 5) Keep months in chronological order; last 6.
   const orderedKeys = [...monthMeta.keys()].sort();
   const lastKeys = orderedKeys.slice(-6);
   const latest = lastKeys[lastKeys.length - 1];
+
+  // 5b) Keep weeks in chronological order; last 12.
+  const orderedWeeks = weekCols.map((w) => w.endISO).sort();
+  const lastWeeks = orderedWeeks.slice(-12);
 
   // 6) Persist.
   await prisma.$transaction(async (tx) => {
@@ -194,6 +228,8 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     await tx.expenseCategory.deleteMany();
     await tx.expenseSubcategory.deleteMany();
     await tx.otherInvestment.deleteMany();
+    await tx.expenseWeek.deleteMany();
+    await tx.expenseWeekCategory.deleteMany();
 
     // Reclassified investments (e.g. coaching/education) — stored for ALL months
     // of the report, not just the shown window, so large one-off payments show
@@ -237,6 +273,21 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
           const value = Math.round(v);
           if (value > 0) await tx.expenseSubcategory.create({ data: { period: key, parent, name: subName, value } });
         }
+      }
+    }
+
+    // Weekly totals and categories (last 12 weeks)
+    for (const endISO of lastWeeks) {
+      const wCol = weekCols.find((w) => w.endISO === endISO);
+      if (!wCol) continue;
+      const rawHeader = (rows[0][wCol.c] || "").trim(); // "01.06-07.06"
+      const label = rawHeader.replace("-", "–"); // en-dash
+      const value = Math.round(weekTotal.get(endISO) || 0);
+      await tx.expenseWeek.create({ data: { label, weekEnd: endISO, value } });
+      const wm = catByWeek.get(endISO) || new Map<string, number>();
+      const sortedCats = [...wm.entries()].map(([name, v]) => ({ name, value: Math.round(v) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
+      for (const c of sortedCats) {
+        await tx.expenseWeekCategory.create({ data: { weekEnd: endISO, name: c.name, value: c.value } });
       }
     }
 
