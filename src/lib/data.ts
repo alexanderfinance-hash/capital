@@ -42,6 +42,7 @@ function personalFallback(): PersonalData {
     expenseMonths: initialStore.expenseMonths.map((m) => ({ ...m })),
     expenseWeeks: [],
     expenseWeeksByPeriod: {},
+    expenseWeekSubs: {},
     coins: initialStore.coins.map((c) => ({ ...c })),
     cryptoWallets: [],
     personalWallets: [],
@@ -70,7 +71,7 @@ export async function getPersonalData(): Promise<PersonalData> {
   try {
     // History charts show up to ~13 months back (covers the 1Y period + margin).
     const historyFrom = new Date(Date.now() - 400 * 86400000);
-    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync, incomeRows, investRows, weekRows, allWeekCats] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync, incomeRows, investRows, weekRows, allWeekCats, allWeekSubs] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
@@ -87,6 +88,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       prisma.otherInvestment.findMany({ orderBy: { value: "desc" } }),
       prisma.expenseWeek.findMany({ orderBy: { weekEnd: "asc" } }),
       prisma.expenseWeekCategory.findMany({ orderBy: { value: "desc" } }),
+      prisma.expenseWeekSubcategory.findMany({ orderBy: { value: "desc" } }),
     ]);
 
     const toPoints = (rows: { capturedAt: Date; value: unknown }[]): SnapshotPoint[] =>
@@ -142,6 +144,10 @@ export async function getPersonalData(): Promise<PersonalData> {
     for (const c of allWeekCats) {
       (expenseWeeksByPeriod[c.weekEnd] ||= []).push({ name: c.name, value: num(c.value) });
     }
+    const expenseWeekSubs: Record<string, Record<string, { name: string; value: number }[]>> = {};
+    for (const s of allWeekSubs) {
+      ((expenseWeekSubs[s.weekEnd] ||= {})[s.parent] ||= []).push({ name: s.name, value: num(s.value) });
+    }
 
     // Subcategories grouped by period → parent (for the expandable tree).
     const expenseSubs: Record<string, Record<string, { name: string; value: number }[]>> = {};
@@ -192,6 +198,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       expenseMonths: months,
       expenseWeeks,
       expenseWeeksByPeriod,
+      expenseWeekSubs,
       coins: coinRows.map((c) => ({ t: c.ticker, pct: c.pct })),
       cryptoWallets,
       personalWallets,

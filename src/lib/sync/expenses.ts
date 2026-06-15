@@ -108,13 +108,15 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
   // period → parent → subName → usd
   const subByMonth = new Map<MonthKey, Map<string, Map<string, number>>>();
 
-  // Weekly accumulators: weekEnd ISO → total USD and categories
+  // Weekly accumulators: weekEnd ISO → total USD, categories, subcategories
   const weekTotal = new Map<string, number>();
   const catByWeek = new Map<string, Map<string, number>>();
+  const subByWeek = new Map<string, Map<string, Map<string, number>>>();
   // Initialise week buckets
   for (const w of weekCols) {
     weekTotal.set(w.endISO, 0);
     catByWeek.set(w.endISO, new Map());
+    subByWeek.set(w.endISO, new Map());
   }
   // Reclassified-as-investment subcategories (kept out of expenses entirely).
   // period → total usd, and period → parent → usd (to deduct from category totals).
@@ -160,6 +162,10 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
         const pm = subByMonth.get(key)!;
         const sm = pm.get(parent) || pm.set(parent, new Map()).get(parent)!;
         sm.set(name, (sm.get(name) || 0) + usd);
+        // Weekly subcategory accumulation
+        const wpm = subByWeek.get(w.endISO)!;
+        const wsm = wpm.get(parent) || wpm.set(parent, new Map()).get(parent)!;
+        wsm.set(name, (wsm.get(name) || 0) + usd);
       }
     }
 
@@ -230,6 +236,7 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     await tx.otherInvestment.deleteMany();
     await tx.expenseWeek.deleteMany();
     await tx.expenseWeekCategory.deleteMany();
+    await tx.expenseWeekSubcategory.deleteMany();
 
     // Reclassified investments (e.g. coaching/education) — stored for ALL months
     // of the report, not just the shown window, so large one-off payments show
@@ -288,6 +295,17 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
       const sortedCats = [...wm.entries()].map(([name, v]) => ({ name, value: Math.round(v) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
       for (const c of sortedCats) {
         await tx.expenseWeekCategory.create({ data: { weekEnd: endISO, name: c.name, value: c.value } });
+      }
+      // Weekly subcategories
+      const wpm = subByWeek.get(endISO);
+      if (wpm) {
+        for (const [parent, wsm] of wpm) {
+          if (exclude.has(parent)) continue;
+          for (const [subName, v] of wsm) {
+            const value = Math.round(v);
+            if (value > 0) await tx.expenseWeekSubcategory.create({ data: { weekEnd: endISO, parent, name: subName, value } });
+          }
+        }
       }
     }
 

@@ -65,6 +65,7 @@ export const initialStore: PersonalStore = {
   otherInvestments: { total: 0, items: [] },
   expenseWeeks: [],
   expenseWeeksByPeriod: {},
+  expenseWeekSubs: {},
 };
 
 // Demo income so the расходы/доходы chart has a second series in dev (no DB).
