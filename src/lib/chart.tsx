@@ -273,6 +273,26 @@ export function catColorMap(names: string[]): Record<string, string> {
 
 /* Универсальный donut по категориям — структура расходов за период.
    В центре — итог; сегменты подписаны через <title> (категория · сумма · %). */
+/** Денежная сумма с «тонкими» разделителями разрядов. Моноширинный шрифт рисует
+ *  любой пробел во всю ширину знакоместа, поэтому разделители групп (₽ 2 564 776)
+ *  разъезжаются. Здесь мы режем строку по пробелам и вставляем узкие inline-блоки
+ *  фиксированной ширины — не завися от метрик шрифта. Для USD ($2,649,472 — через
+ *  запятые, без пробелов) рендерится как есть. */
+export function Money({ children }: { children: string }) {
+  const parts = children.split(/[\u0020\u00A0\u202F]+/);
+  if (parts.length === 1) return <>{children}</>;
+  return (
+    <span style={{ whiteSpace: "nowrap" }}>
+      {parts.map((p, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span style={{ display: "inline-block", width: "0.26em" }} />}
+          {p}
+        </React.Fragment>
+      ))}
+    </span>
+  );
+}
+
 export function CategoryDonut({
   data,
   total,
@@ -326,7 +346,7 @@ export function CategoryDonut({
         {circles}
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-        <span className="mono" style={{ fontSize: 17, fontWeight: 500 }}>{fmtV(T)}</span>
+        <span className="mono" style={{ fontSize: 17, fontWeight: 500 }}><Money>{fmtV(T)}</Money></span>
         <span className="k" style={{ fontSize: 9 }}>итого</span>
       </div>
       {h && (
@@ -349,7 +369,7 @@ export function CategoryDonut({
             zIndex: 5,
           }}
         >
-          <div className="mono" style={{ fontWeight: 600 }}>{fmtV(h.value)} · {Math.round((h.value / T) * 100)}%</div>
+          <div className="mono" style={{ fontWeight: 600 }}><Money>{fmtV(h.value)}</Money> · {Math.round((h.value / T) * 100)}%</div>
           <div style={{ opacity: 0.75, fontSize: 10 }}>{h.name}</div>
         </div>
       )}

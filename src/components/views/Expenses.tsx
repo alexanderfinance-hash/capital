@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/store";
 import { fmt } from "@/lib/format";
-import { Badge, CategoryDonut, catColorMap } from "@/lib/chart";
+import { Badge, CategoryDonut, catColorMap, Money } from "@/lib/chart";
 import { Topbar } from "../ui";
 
 const fmtSigned = (n: number): string => (n >= 0 ? "+" : "−") + fmt(Math.abs(n));
@@ -111,7 +111,7 @@ function StackedChart({
         <div style={{ width: AXIS_W, position: "relative", height: PLOT_H, marginLeft: 8, flex: "none" }}>
           {ticks.map((t, i) => (
             <span key={i} className="mono" style={{ position: "absolute", top: t.y, right: 0, transform: "translateY(-50%)", fontSize: 9.5, color: "var(--muted)", whiteSpace: "nowrap" }}>
-              {fmtV(t.val)}
+              <Money>{fmtV(t.val)}</Money>
             </span>
           ))}
         </div>
@@ -159,7 +159,7 @@ function StackedChart({
             zIndex: 5,
           }}
         >
-          <div className="mono" style={{ fontWeight: 600 }}>{fmtV(hover.value)}</div>
+          <div className="mono" style={{ fontWeight: 600 }}><Money>{fmtV(hover.value)}</Money></div>
           <div style={{ opacity: 0.75, fontSize: 10 }}>{hover.cat} · {hover.label}</div>
         </div>
       )}
@@ -355,7 +355,7 @@ export default function Expenses() {
                       <div key={s.key}>
                         <div className="k">{s.label} за {sel?.m?.toLowerCase()}</div>
                         <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-.02em", marginTop: 6, lineHeight: 1, color: s.color }}>
-                          {s.signed ? fmtVSigned(s.value) : fmtV(s.value)}
+                          <Money>{s.signed ? fmtVSigned(s.value) : fmtV(s.value)}</Money>
                         </div>
                       </div>
                     ))}
@@ -401,7 +401,7 @@ export default function Expenses() {
                       >
                         {show.diff && (show.income || show.expenses) && (
                           <span className="mono" style={{ fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here ? 1 : 0.6 }}>
-                            {fmtVSigned(net)}
+                            <Money>{fmtVSigned(net)}</Money>
                           </span>
                         )}
                         <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 150, width: "100%", justifyContent: "center" }}>
@@ -432,7 +432,7 @@ export default function Expenses() {
                 <div style={{ marginBottom: 18 }}>
                   <div className="k">Расходы за {selWeek?.w ?? "—"}</div>
                   <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-.02em", marginTop: 6, lineHeight: 1, color: "var(--neg)" }}>
-                    {fmtV(selWeek?.v ?? 0)}
+                    <Money>{fmtV(selWeek?.v ?? 0)}</Money>
                   </div>
                 </div>
 
@@ -500,7 +500,7 @@ export default function Expenses() {
                           <div style={{ height: "100%", width: `${((cat.value / maxC) * 100).toFixed(0)}%`, background: catColors[cat.name] || "var(--neg)", borderRadius: 5 }} />
                         </div>
                         <span className="mono" style={{ flex: "none", width: 86, textAlign: "right", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
-                          {fmtV(cat.value)}
+                          <Money>{fmtV(cat.value)}</Money>
                         </span>
                       </button>
                       {open && (
@@ -512,7 +512,7 @@ export default function Expenses() {
                                 <div style={{ height: "100%", width: `${((s.value / maxS) * 100).toFixed(0)}%`, background: "var(--neg)", opacity: 0.6, borderRadius: 4 }} />
                               </div>
                               <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 11.5, color: "var(--ink-2)" }}>
-                                {fmtV(s.value)}
+                                <Money>{fmtV(s.value)}</Money>
                               </span>
                             </div>
                           ))}
@@ -548,7 +548,7 @@ export default function Expenses() {
                           <div style={{ height: "100%", width: `${((cat.value / maxWC) * 100).toFixed(0)}%`, background: catColors[cat.name] || "var(--neg)", borderRadius: 5 }} />
                         </div>
                         <span className="mono" style={{ flex: "none", width: 86, textAlign: "right", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
-                          {fmtV(cat.value)}
+                          <Money>{fmtV(cat.value)}</Money>
                         </span>
                       </button>
                       {open && (
@@ -560,7 +560,7 @@ export default function Expenses() {
                                 <div style={{ height: "100%", width: `${((s.value / maxS) * 100).toFixed(0)}%`, background: "var(--neg)", opacity: 0.6, borderRadius: 4 }} />
                               </div>
                               <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 11.5, color: "var(--ink-2)" }}>
-                                {fmtV(s.value)}
+                                <Money>{fmtV(s.value)}</Money>
                               </span>
                             </div>
                           ))}
