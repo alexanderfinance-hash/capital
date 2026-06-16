@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/store";
 import { fmt } from "@/lib/format";
 import { Badge, CategoryDonut, catColorMap } from "@/lib/chart";
@@ -8,11 +8,164 @@ import { Topbar } from "../ui";
 
 const fmtSigned = (n: number): string => (n >= 0 ? "+" : "−") + fmt(Math.abs(n));
 const fmtRub = (n: number): string =>
-  "₽ " + Math.round(n).toLocaleString("ru-RU");
+  // U+202F (узкий неразрывный) вместо широкого U+00A0 в разделителе групп тысяч/млн
+  "₽ " + Math.round(n).toLocaleString("ru-RU").replace(/\u00A0/g, " ");
 
 type SeriesKey = "income" | "expenses" | "diff";
 type ViewMode = "month" | "week";
 type Currency = "USD" | "RUB";
+
+interface StackBar {
+  label: string;
+  cats: { name: string; value: number }[];
+  total: number;
+}
+
+/** «Красивый» верх шкалы — ближайшее круглое значение ≥ max (1/2/2.5/5/10 ×10ⁿ),
+ *  чтобы метки оси были читаемыми. */
+function niceMax(v: number): number {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / pow;
+  const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return m * pow;
+}
+
+/* Накопительная столбчатая диаграмма по периодам: ось сумм справа + сетка,
+   мгновенный тултип у курсора и подсветка сегмента. Работает и для месяцев,
+   и для недель (vertical — вертикальные подписи недель). */
+function StackedChart({
+  bars,
+  maxStack,
+  colors,
+  fmtV,
+  selIdx,
+  onSelect,
+  vertical,
+}: {
+  bars: StackBar[];
+  maxStack: number;
+  colors: Record<string, string>;
+  fmtV: (v: number) => string;
+  selIdx: number;
+  onSelect: (i: number) => void;
+  vertical: boolean;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<{ bar: number; cat: string; value: number; label: string } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const PLOT_H = 196;
+  const AXIS_W = 64;
+  const GAP = vertical ? 5 : 10;
+  const top = niceMax(maxStack);
+  const TICKS = 4;
+  const ticks = Array.from({ length: TICKS + 1 }, (_, t) => {
+    const frac = t / TICKS; // 0 — сверху
+    return { val: top * (1 - frac), y: frac * PLOT_H };
+  });
+
+  const onMove = (e: React.MouseEvent) => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setPos({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+      <div style={{ display: "flex" }}>
+        {/* область графика */}
+        <div style={{ flex: 1, position: "relative", height: PLOT_H }}>
+          {ticks.map((t, i) => (
+            <div key={i} style={{ position: "absolute", left: 0, right: 0, top: t.y, borderTop: "1px dashed var(--hair)" }} />
+          ))}
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-end", gap: GAP }}>
+            {bars.map((b, i) => {
+              const here = i === selIdx;
+              const hoveredBar = hover?.bar === i;
+              const hPx = (b.total / top) * PLOT_H;
+              const segs = b.cats.filter((c) => c.value > 0).slice().sort((a, c) => c.value - a.value);
+              return (
+                <button
+                  key={b.label}
+                  onClick={() => onSelect(i)}
+                  style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                >
+                  <div style={{ width: vertical ? "82%" : "64%", maxWidth: 30, height: `${hPx.toFixed(1)}px`, display: "flex", flexDirection: "column", justifyContent: "flex-end", borderRadius: "4px 4px 0 0", overflow: "hidden", opacity: here || hoveredBar ? 1 : 0.5, transition: "opacity .12s" }}>
+                    {segs.map((c) => {
+                      const segOn = hover?.bar === i && hover?.cat === c.name;
+                      return (
+                        <div
+                          key={c.name}
+                          onMouseEnter={() => setHover({ bar: i, cat: c.name, value: c.value, label: b.label })}
+                          style={{ height: `${((c.value / b.total) * 100).toFixed(2)}%`, background: colors[c.name] || "var(--faint)", filter: segOn ? "brightness(1.18)" : "none", boxShadow: segOn ? "inset 0 0 0 1.5px var(--surface)" : "none" }}
+                        />
+                      );
+                    })}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {/* ось сумм справа */}
+        <div style={{ width: AXIS_W, position: "relative", height: PLOT_H, marginLeft: 8, flex: "none" }}>
+          {ticks.map((t, i) => (
+            <span key={i} className="mono" style={{ position: "absolute", top: t.y, right: 0, transform: "translateY(-50%)", fontSize: 9.5, color: "var(--muted)", whiteSpace: "nowrap" }}>
+              {fmtV(t.val)}
+            </span>
+          ))}
+        </div>
+      </div>
+      {/* подписи периодов */}
+      <div style={{ display: "flex", marginTop: 6 }}>
+        <div style={{ flex: 1, display: "flex", gap: GAP }}>
+          {bars.map((b, i) => {
+            const here = i === selIdx;
+            return (
+              <div key={b.label} style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
+                {vertical ? (
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400, writingMode: "vertical-rl", transform: "rotate(180deg)", height: 46, lineHeight: 1 }}>
+                    {b.label}
+                  </span>
+                ) : (
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400 }}>
+                    {b.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ width: AXIS_W, marginLeft: 8, flex: "none" }} />
+      </div>
+      {/* тултип у курсора */}
+      {hover && (
+        <div
+          style={{
+            position: "absolute",
+            left: pos.x,
+            top: pos.y,
+            transform: "translate(-50%, calc(-100% - 12px))",
+            pointerEvents: "none",
+            background: "var(--ink)",
+            color: "var(--surface)",
+            borderRadius: 6,
+            padding: "5px 9px",
+            fontSize: 11.5,
+            lineHeight: 1.35,
+            whiteSpace: "nowrap",
+            textAlign: "center",
+            boxShadow: "0 4px 14px rgba(0,0,0,.18)",
+            zIndex: 5,
+          }}
+        >
+          <div className="mono" style={{ fontWeight: 600 }}>{fmtV(hover.value)}</div>
+          <div style={{ opacity: 0.75, fontSize: 10 }}>{hover.cat} · {hover.label}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Expenses() {
   const { store, usdRub } = useApp();
@@ -335,18 +488,18 @@ export default function Expenses() {
                     <div key={cat.name}>
                       <button
                         onClick={() => sub.length && setOpenCat(open ? null : cat.name)}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "9px 0", background: "none", border: "none", cursor: sub.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 0", background: "none", border: "none", cursor: sub.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
                       >
                         <span style={{ flex: "none", width: 12, color: "var(--faint)", fontSize: 13, transition: "transform .15s", transform: `rotate(${open ? 90 : 0}deg)`, opacity: sub.length ? 1 : 0 }}>›</span>
                         <span style={{ flex: "none", width: 9, height: 9, borderRadius: 2, background: catColors[cat.name] || "var(--faint)" }} />
-                        <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)" }}>{cat.name}</span>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{cat.name}</span>
                         <span className="mono" style={{ flex: "none", width: 34, textAlign: "right", fontSize: 11, color: "var(--muted)" }}>
                           {donutTotal ? Math.round((cat.value / donutTotal) * 100) : 0}%
                         </span>
-                        <div style={{ flex: "none", width: 56, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
+                        <div style={{ flex: "none", width: 44, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
                           <div style={{ height: "100%", width: `${((cat.value / maxC) * 100).toFixed(0)}%`, background: catColors[cat.name] || "var(--neg)", borderRadius: 5 }} />
                         </div>
-                        <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 12.5, fontWeight: 500 }}>
+                        <span className="mono" style={{ flex: "none", width: 86, textAlign: "right", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
                           {fmtV(cat.value)}
                         </span>
                       </button>
@@ -383,18 +536,18 @@ export default function Expenses() {
                     <div key={cat.name}>
                       <button
                         onClick={() => sub.length && setOpenWeekCat(open ? null : cat.name)}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "9px 0", background: "none", border: "none", cursor: sub.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 0", background: "none", border: "none", cursor: sub.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
                       >
                         <span style={{ flex: "none", width: 12, color: "var(--faint)", fontSize: 13, transition: "transform .15s", transform: `rotate(${open ? 90 : 0}deg)`, opacity: sub.length ? 1 : 0 }}>›</span>
                         <span style={{ flex: "none", width: 9, height: 9, borderRadius: 2, background: catColors[cat.name] || "var(--faint)" }} />
-                        <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)" }}>{cat.name}</span>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{cat.name}</span>
                         <span className="mono" style={{ flex: "none", width: 34, textAlign: "right", fontSize: 11, color: "var(--muted)" }}>
                           {donutTotal ? Math.round((cat.value / donutTotal) * 100) : 0}%
                         </span>
-                        <div style={{ flex: "none", width: 56, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
+                        <div style={{ flex: "none", width: 44, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
                           <div style={{ height: "100%", width: `${((cat.value / maxWC) * 100).toFixed(0)}%`, background: catColors[cat.name] || "var(--neg)", borderRadius: 5 }} />
                         </div>
-                        <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 12.5, fontWeight: 500 }}>
+                        <span className="mono" style={{ flex: "none", width: 86, textAlign: "right", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
                           {fmtV(cat.value)}
                         </span>
                       </button>
@@ -431,40 +584,15 @@ export default function Expenses() {
               Высота столбца — сумма расходов за период; сегменты — категории. Нажмите на столбец, чтобы открыть его разбивку справа.
             </div>
 
-            <div style={{ display: "flex", alignItems: "flex-end", gap: mode === "month" ? 10 : 5, height: mode === "month" ? 220 : 240 }}>
-              {stackBars.map((b, i) => {
-                const here = i === stackSelIdx;
-                const hPx = (b.total / maxStack) * (mode === "month" ? 175 : 165);
-                const segs = b.cats.filter((c) => c.value > 0).slice().sort((a, c) => c.value - a.value);
-                return (
-                  <button
-                    key={b.label}
-                    onClick={() => onStackSelect(i)}
-                    title={`${b.label}: ${fmtV(b.total)}`}
-                    style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 0, justifyContent: "flex-end", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "var(--sans)" }}
-                  >
-                    <div style={{ width: mode === "month" ? "62%" : "78%", maxWidth: 28, height: `${hPx.toFixed(0)}px`, display: "flex", flexDirection: "column", justifyContent: "flex-end", borderRadius: "4px 4px 0 0", overflow: "hidden", opacity: here ? 1 : 0.45, transition: "opacity .12s", marginBottom: 5 }}>
-                      {segs.map((c) => (
-                        <div
-                          key={c.name}
-                          title={`${c.name}: ${fmtV(c.value)}`}
-                          style={{ height: `${((c.value / b.total) * 100).toFixed(2)}%`, background: catColors[c.name] || "var(--faint)" }}
-                        />
-                      ))}
-                    </div>
-                    {mode === "month" ? (
-                      <span className="axis" style={{ fontFamily: "var(--mono)", fontSize: 10, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400 }}>
-                        {b.label}
-                      </span>
-                    ) : (
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400, writingMode: "vertical-rl", transform: "rotate(180deg)", height: 46, lineHeight: 1 }}>
-                        {b.label}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            <StackedChart
+              bars={stackBars}
+              maxStack={maxStack}
+              colors={catColors}
+              fmtV={fmtV}
+              selIdx={stackSelIdx}
+              onSelect={onStackSelect}
+              vertical={mode === "week"}
+            />
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--hair-2)" }}>
               {Object.keys(catColors).map((name) => (

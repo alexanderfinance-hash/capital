@@ -282,12 +282,16 @@ export function CategoryDonut({
   total?: number;
   fmtV: (v: number) => string;
 }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const segs = data.filter((d) => d.value > 0);
   const T = total || segs.reduce((s, d) => s + d.value, 0) || 1;
   const C = 2 * Math.PI * 52;
   let off = 0;
   const circles = segs.map((s, i) => {
     const len = (s.value / T) * C;
+    const on = hover === i;
     const el = (
       <circle
         key={i}
@@ -296,25 +300,59 @@ export function CategoryDonut({
         r={52}
         fill="none"
         stroke={s.color}
-        strokeWidth={14}
+        strokeWidth={on ? 17 : 14}
         strokeDasharray={`${len.toFixed(1)} ${(C - len).toFixed(1)}`}
         strokeDashoffset={(-off).toFixed(1)}
-      >
-        <title>{`${s.name}: ${fmtV(s.value)} · ${Math.round((s.value / T) * 100)}%`}</title>
-      </circle>
+        style={{ cursor: "pointer", transition: "stroke-width .1s", opacity: hover === null || on ? 1 : 0.55 }}
+        onMouseEnter={() => setHover(i)}
+      />
     );
     off += len;
     return el;
   });
+  const onMove = (e: React.MouseEvent) => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setPos({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+  const h = hover !== null ? segs[hover] : null;
   return (
-    <div style={{ position: "relative", margin: "2px auto 16px", width: 168 }}>
+    <div
+      ref={wrapRef}
+      style={{ position: "relative", margin: "2px auto 16px", width: 168 }}
+      onMouseMove={onMove}
+      onMouseLeave={() => setHover(null)}
+    >
       <svg viewBox="0 0 120 120" style={{ width: 168, height: 168, display: "block", margin: "0 auto", transform: "rotate(-90deg)" }}>
         {circles}
       </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
         <span className="mono" style={{ fontSize: 17, fontWeight: 500 }}>{fmtV(T)}</span>
         <span className="k" style={{ fontSize: 9 }}>итого</span>
       </div>
+      {h && (
+        <div
+          style={{
+            position: "absolute",
+            left: pos.x,
+            top: pos.y,
+            transform: "translate(-50%, calc(-100% - 12px))",
+            pointerEvents: "none",
+            background: "var(--ink)",
+            color: "var(--surface)",
+            borderRadius: 6,
+            padding: "5px 9px",
+            fontSize: 11.5,
+            lineHeight: 1.35,
+            whiteSpace: "nowrap",
+            textAlign: "center",
+            boxShadow: "0 4px 14px rgba(0,0,0,.18)",
+            zIndex: 5,
+          }}
+        >
+          <div className="mono" style={{ fontWeight: 600 }}>{fmtV(h.value)} · {Math.round((h.value / T) * 100)}%</div>
+          <div style={{ opacity: 0.75, fontSize: 10 }}>{h.name}</div>
+        </div>
+      )}
     </div>
   );
 }
