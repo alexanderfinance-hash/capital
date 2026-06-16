@@ -205,6 +205,34 @@ model ExpenseSubcategory {
   @@index([period, parent])
 }
 
+/// Individual personal-expense payments from the ДДС ledger (Дата/Сумма/
+/// Комментарий/Статья/Подстатья), for drilling a subcategory down to single
+/// payments. Amounts are scaled so a subcategory's payments sum to its total.
+model ExpenseTransaction {
+  id      String  @id @default(cuid())
+  period  String  // "YYYY-MM"
+  parent  String  // Статья
+  sub     String  // Подстатья
+  date    String  // "YYYY-MM-DD"
+  comment String  // столбец H («Комментарий к платежу»)
+  value   Decimal @db.Decimal(18, 2) // USD
+
+  @@index([period, parent, sub])
+}
+
+/// Same, bucketed per week (last ~12 weeks) for the weekly view.
+model ExpenseWeekTransaction {
+  id      String  @id @default(cuid())
+  weekEnd String  // "YYYY-MM-DD"
+  parent  String
+  sub     String
+  date    String
+  comment String
+  value   Decimal @db.Decimal(18, 2)
+
+  @@index([weekEnd, parent, sub])
+}
+
 /// Monthly personal income (mostly dividends), imported from the ДДС Google
 /// Sheet ledger. Drives the income series on the расходы/доходы chart. Keyed by
 /// period "YYYY-MM"; value is in USD (the ledger is kept in USD).

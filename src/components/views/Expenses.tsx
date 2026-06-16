@@ -15,6 +15,72 @@ type SeriesKey = "income" | "expenses" | "diff";
 type ViewMode = "month" | "week";
 type Currency = "USD" | "RUB";
 
+interface Txn {
+  date: string;
+  comment: string;
+  value: number;
+}
+
+/** "2025-06-03" → "03.06". */
+const fmtDate = (iso: string): string => {
+  const m = (iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}` : iso;
+};
+
+/* Строка подкатегории с раскрытием до отдельных платежей (комментарий + сумма
+   из ДДС). Если платежей нет — ведёт себя как раньше (просто строка). */
+function SubRow({
+  s,
+  maxS,
+  color,
+  txns,
+  open,
+  onToggle,
+  fmtV,
+}: {
+  s: { name: string; value: number };
+  maxS: number;
+  color: string;
+  txns: Txn[];
+  open: boolean;
+  onToggle: () => void;
+  fmtV: (v: number) => string;
+}) {
+  const has = txns.length > 0;
+  return (
+    <div>
+      <button
+        onClick={() => has && onToggle()}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 0", background: "none", border: "none", cursor: has ? "pointer" : "default", textAlign: "left", fontFamily: "var(--sans)" }}
+      >
+        <span style={{ flex: "none", width: 10, color: "var(--faint)", fontSize: 11, transform: `rotate(${open ? 90 : 0}deg)`, transition: "transform .15s", opacity: has ? 1 : 0 }}>›</span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: "var(--muted)", overflowWrap: "anywhere" }}>{s.name}</span>
+        <div style={{ flex: "none", width: 44, height: 6, borderRadius: 4, background: "var(--hair-2)", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${((s.value / maxS) * 100).toFixed(0)}%`, background: color, opacity: 0.55, borderRadius: 4 }} />
+        </div>
+        <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 11.5, color: "var(--ink-2)", whiteSpace: "nowrap" }}>
+          <Money>{fmtV(s.value)}</Money>
+        </span>
+      </button>
+      {open && has && (
+        <div style={{ padding: "2px 0 8px 22px" }}>
+          {txns.map((t, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "4px 0", borderTop: "1px solid var(--hair-2)" }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--ink-2)", overflowWrap: "anywhere" }}>
+                {t.comment || <span style={{ color: "var(--faint)" }}>без комментария</span>}
+                <span style={{ color: "var(--faint)", marginLeft: 6, fontFamily: "var(--mono)" }}>{fmtDate(t.date)}</span>
+              </span>
+              <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                <Money>{fmtV(t.value)}</Money>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface StackBar {
   label: string;
   cats: { name: string; value: number }[];
@@ -180,6 +246,8 @@ export default function Expenses() {
   const [show, setShow] = useState<Record<SeriesKey, boolean>>({ income: true, expenses: true, diff: true });
   const [currency, setCurrency] = useState<Currency>("USD");
   const [openCat, setOpenCat] = useState<string | null>(null);
+  const [openSub, setOpenSub] = useState<string | null>(null);
+  const [openWeekSub, setOpenWeekSub] = useState<string | null>(null);
   const toggle = (k: SeriesKey) => setShow((p) => ({ ...p, [k]: !p[k] }));
 
   const conv = (v: number) => currency === "RUB" ? v * usdRub : v;
@@ -537,17 +605,21 @@ export default function Expenses() {
                       </button>
                       {open && (
                         <div style={{ padding: "0 0 8px 24px" }}>
-                          {sub.map((s) => (
-                            <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
-                              <span style={{ flex: 1, fontSize: 11.5, color: "var(--muted)" }}>{s.name}</span>
-                              <div style={{ flex: "none", width: 50, height: 6, borderRadius: 4, background: "var(--hair-2)", overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${((s.value / maxS) * 100).toFixed(0)}%`, background: "var(--neg)", opacity: 0.6, borderRadius: 4 }} />
-                              </div>
-                              <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 11.5, color: "var(--ink-2)" }}>
-                                <Money>{fmtV(s.value)}</Money>
-                              </span>
-                            </div>
-                          ))}
+                          {sub.map((s) => {
+                            const sk = `${cat.name}||${s.name}`;
+                            return (
+                              <SubRow
+                                key={s.name}
+                                s={s}
+                                maxS={maxS}
+                                color={catColors[cat.name] || "var(--neg)"}
+                                txns={store.expenseTxns[period]?.[cat.name]?.[s.name] || []}
+                                open={openSub === sk}
+                                onToggle={() => setOpenSub(openSub === sk ? null : sk)}
+                                fmtV={fmtV}
+                              />
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -585,17 +657,21 @@ export default function Expenses() {
                       </button>
                       {open && (
                         <div style={{ padding: "0 0 8px 24px" }}>
-                          {sub.map((s) => (
-                            <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
-                              <span style={{ flex: 1, fontSize: 11.5, color: "var(--muted)" }}>{s.name}</span>
-                              <div style={{ flex: "none", width: 50, height: 6, borderRadius: 4, background: "var(--hair-2)", overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${((s.value / maxS) * 100).toFixed(0)}%`, background: "var(--neg)", opacity: 0.6, borderRadius: 4 }} />
-                              </div>
-                              <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 11.5, color: "var(--ink-2)" }}>
-                                <Money>{fmtV(s.value)}</Money>
-                              </span>
-                            </div>
-                          ))}
+                          {sub.map((s) => {
+                            const sk = `${cat.name}||${s.name}`;
+                            return (
+                              <SubRow
+                                key={s.name}
+                                s={s}
+                                maxS={maxS}
+                                color={catColors[cat.name] || "var(--neg)"}
+                                txns={store.expenseWeekTxns[selWeek?.weekEnd ?? ""]?.[cat.name]?.[s.name] || []}
+                                open={openWeekSub === sk}
+                                onToggle={() => setOpenWeekSub(openWeekSub === sk ? null : sk)}
+                                fmtV={fmtV}
+                              />
+                            );
+                          })}
                         </div>
                       )}
                     </div>

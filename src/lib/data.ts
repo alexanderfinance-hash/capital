@@ -43,6 +43,8 @@ function personalFallback(): PersonalData {
     expenseWeeks: [],
     expenseWeeksByPeriod: {},
     expenseWeekSubs: {},
+    expenseTxns: {},
+    expenseWeekTxns: {},
     coins: initialStore.coins.map((c) => ({ ...c })),
     cryptoWallets: [],
     personalWallets: [],
@@ -71,7 +73,7 @@ export async function getPersonalData(): Promise<PersonalData> {
   try {
     // History charts show up to ~13 months back (covers the 1Y period + margin).
     const historyFrom = new Date(Date.now() - 400 * 86400000);
-    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync, incomeRows, investRows, weekRows, allWeekCats, allWeekSubs] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync, incomeRows, investRows, weekRows, allWeekCats, allWeekSubs, allTxns, allWeekTxns] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
@@ -89,6 +91,8 @@ export async function getPersonalData(): Promise<PersonalData> {
       prisma.expenseWeek.findMany({ orderBy: { weekEnd: "asc" } }),
       prisma.expenseWeekCategory.findMany({ orderBy: { value: "desc" } }),
       prisma.expenseWeekSubcategory.findMany({ orderBy: { value: "desc" } }),
+      prisma.expenseTransaction.findMany({ orderBy: { date: "asc" } }),
+      prisma.expenseWeekTransaction.findMany({ orderBy: { date: "asc" } }),
     ]);
 
     const toPoints = (rows: { capturedAt: Date; value: unknown }[]): SnapshotPoint[] =>
@@ -155,6 +159,18 @@ export async function getPersonalData(): Promise<PersonalData> {
       ((expenseSubs[s.period] ||= {})[s.parent] ||= []).push({ name: s.name, value: num(s.value) });
     }
 
+    // Individual payments: period|weekEnd → Статья → Подстатья → платежи (для
+    // раскрытия подкатегории до отдельных трат с комментарием).
+    type TxTree = Record<string, Record<string, Record<string, { date: string; comment: string; value: number }[]>>>;
+    const expenseTxns: TxTree = {};
+    for (const t of allTxns) {
+      ((((expenseTxns[t.period] ||= {})[t.parent] ||= {})[t.sub] ||= [])).push({ date: t.date, comment: t.comment, value: num(t.value) });
+    }
+    const expenseWeekTxns: TxTree = {};
+    for (const t of allWeekTxns) {
+      ((((expenseWeekTxns[t.weekEnd] ||= {})[t.parent] ||= {})[t.sub] ||= [])).push({ date: t.date, comment: t.comment, value: num(t.value) });
+    }
+
     // Per-wallet crypto breakdown (for the expandable coin list).
     const cryptoWallets: { symbol: string; chain: string; label: string; address: string; amount: number; usd: number }[] = [];
     for (const w of personalWalletRows) {
@@ -199,6 +215,8 @@ export async function getPersonalData(): Promise<PersonalData> {
       expenseWeeks,
       expenseWeeksByPeriod,
       expenseWeekSubs,
+      expenseTxns,
+      expenseWeekTxns,
       coins: coinRows.map((c) => ({ t: c.ticker, pct: c.pct })),
       cryptoWallets,
       personalWallets,

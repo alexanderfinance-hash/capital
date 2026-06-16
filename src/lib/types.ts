@@ -102,6 +102,15 @@ export interface SubCat {
   value: number;
 }
 
+/** Отдельный платёж из ДДС-журнала (для раскрытия подкатегории до трат). */
+export interface ExpenseTxn {
+  date: string; // "YYYY-MM-DD"
+  comment: string; // столбец H ДДС («Комментарий к платежу»)
+  value: number; // USD (отмасштабирован под итог подкатегории)
+}
+/** period|weekEnd → Статья → Подстатья → платежи. */
+export type ExpenseTxnTree = Record<string, Record<string, Record<string, ExpenseTxn[]>>>;
+
 export interface PersonalStore {
   assets: Asset[];
   flows: { expenses: FlowExpenses; dividends: FlowDividends };
@@ -112,6 +121,8 @@ export interface PersonalStore {
   expenseWeeks: ExpenseWeek[];
   expenseWeeksByPeriod: Record<string, ExpenseCat[]>; // weekEnd → categories
   expenseWeekSubs: Record<string, Record<string, SubCat[]>>; // weekEnd → parent → subs
+  expenseTxns: ExpenseTxnTree; // period → parent → sub → платежи
+  expenseWeekTxns: ExpenseTxnTree; // weekEnd → parent → sub → платежи
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
   dividendsList: Dividend[];
@@ -187,6 +198,8 @@ export interface PersonalData {
   expenseWeeks: ExpenseWeek[];
   expenseWeeksByPeriod: Record<string, ExpenseCat[]>;
   expenseWeekSubs: Record<string, Record<string, SubCat[]>>;
+  expenseTxns: ExpenseTxnTree;
+  expenseWeekTxns: ExpenseTxnTree;
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
   personalWallets: PersonalWalletRow[];
