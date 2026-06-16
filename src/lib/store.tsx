@@ -42,6 +42,8 @@ interface AppState {
   personalSynced: string;
   refreshPersonal: () => void;
   personalSyncing: boolean;
+  refreshExpenses: () => void;
+  expensesSyncing: boolean;
 
   /* company */
   wallets: Wallet[];
@@ -110,6 +112,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   }));
   const [personalSynced, setPersonalSynced] = useState(initial.personal.synced);
   const [personalSyncing, setPersonalSyncing] = useState(false);
+  const [expensesSyncing, setExpensesSyncing] = useState(false);
   const [personalWallets, setPersonalWallets] = useState<PersonalWalletRow[]>(initial.personal.personalWallets.map((w) => ({ ...w })));
   const [capitalHistory] = useState<SnapshotPoint[]>(initial.personal.capitalHistory.map((p) => ({ ...p })));
   const [cryptoHistory] = useState<SnapshotPoint[]>(initial.personal.cryptoHistory.map((p) => ({ ...p })));
@@ -286,6 +289,33 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
       });
   }, [toast]);
 
+  // Принудительная синхронизация личных расходов (Google Sheets «Отчет») и
+  // доходов (ДДС) — чтобы свежезаполненная неделя/месяц появились без ожидания
+  // часового крона. Не обнуляет данные при сбое (PRD §7): при ошибке оставляем
+  // прежние цифры и показываем тост.
+  const refreshExpenses = useCallback(() => {
+    setExpensesSyncing(true);
+    toast("Обновляю расходы из Google Sheets…");
+    (async () => {
+      try {
+        const res = await fetch("/api/sync/expenses", { method: "POST" });
+        const j = await res.json().catch(() => ({}));
+        // Доходы (дивиденды из ДДС) — чтобы серия доходов тоже подтянулась.
+        await fetch("/api/sync/dividends", { method: "POST" }).catch(() => {});
+        setExpensesSyncing(false);
+        if (j && j.ok) {
+          toast("Расходы обновлены");
+          window.location.reload();
+        } else {
+          toast("Не удалось обновить (нет доступа к Google Sheets)");
+        }
+      } catch {
+        setExpensesSyncing(false);
+        toast("Не удалось обновить расходы");
+      }
+    })();
+  }, [toast]);
+
   const persistReserves = useCallback((r: Reserves) => {
     if (reserveTimer.current) clearTimeout(reserveTimer.current);
     reserveTimer.current = setTimeout(() => api("PUT", "/api/reserves", r), 400);
@@ -365,6 +395,8 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     personalSynced,
     refreshPersonal,
     personalSyncing,
+    refreshExpenses,
+    expensesSyncing,
     wallets,
     addCompanyWallet,
     deleteCompanyWallet,

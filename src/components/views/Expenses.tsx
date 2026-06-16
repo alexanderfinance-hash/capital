@@ -168,7 +168,7 @@ function StackedChart({
 }
 
 export default function Expenses() {
-  const { store, usdRub } = useApp();
+  const { store, usdRub, refreshExpenses, expensesSyncing } = useApp();
   const months = store.expenseMonths;
   const weeks = store.expenseWeeks;
   const lastIdx = months.length - 1;
@@ -332,7 +332,39 @@ export default function Expenses() {
 
   return (
     <>
-      <Topbar title="Расходы и доходы" sub="Импорт из Google Sheets" right={<Badge src="sheets" />} />
+      <Topbar
+        title="Расходы и доходы"
+        sub="Импорт из Google Sheets"
+        right={
+          <>
+            <button
+              onClick={refreshExpenses}
+              disabled={expensesSyncing}
+              title="Подтянуть свежие расходы и доходы из Google Sheets"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 11px",
+                borderRadius: 8,
+                border: "1px solid var(--hair)",
+                background: "var(--surface)",
+                color: "var(--ink-2)",
+                cursor: expensesSyncing ? "default" : "pointer",
+                fontFamily: "var(--sans)",
+                fontSize: 12,
+                fontWeight: 500,
+                opacity: expensesSyncing ? 0.6 : 1,
+                transition: "opacity .12s",
+              }}
+            >
+              <span style={{ fontSize: 13, lineHeight: 1, display: "inline-block", transform: expensesSyncing ? "rotate(180deg)" : "none", transition: "transform .3s" }}>↻</span>
+              {expensesSyncing ? "Обновляю…" : "Обновить данные"}
+            </button>
+            <Badge src="sheets" />
+          </>
+        }
+      />
 
       {isEmpty ? (
         <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
