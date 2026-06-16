@@ -60,8 +60,12 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
   const exclude = excludeSet();
   const investSubcats = investSubcatSet();
 
-  // 2) The report matrix.
-  const rows = await readValues(tab, "A1:AH200");
+  // 2) The report matrix. The range must be wide enough to reach the NEWEST
+  //    period columns: the sheet grows left→right (a month-summary column plus
+  //    ~4-5 week columns per month), so a year easily exceeds column AH (34).
+  //    Reading too few columns silently drops the latest weeks/months — which
+  //    looked like "the sync isn't updating". Read generously.
+  const rows = await readValues(tab, "A1:CZ300");
   const headers = rows[0] || [];
 
   const reportYear =
