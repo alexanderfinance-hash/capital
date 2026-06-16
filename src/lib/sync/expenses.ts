@@ -26,8 +26,14 @@ function excludeSet(): Set<string> {
 
 /** Subcategories (Подстатья) reclassified from expenses to investments — pulled
  *  out of the expense totals and shown separately on Инвестиции (e.g. coaching /
- *  education, which can't be sold). Comma-separated; matched by exact name. */
+ *  education, which can't be sold). Comma-separated; matched by exact name.
+ *
+ *  OFF by default: expenses mirror the sheet 1:1. Enable with
+ *  EXPENSE_RECLASSIFY_INVESTMENTS=true (then EXPENSE_AS_INVESTMENT lists which
+ *  подстатьи to move). Gating behind a flag means a stale EXPENSE_AS_INVESTMENT
+ *  left in a server .env no longer silently subtracts from expenses. */
 function investSubcatSet(): Set<string> {
+  if ((process.env.EXPENSE_RECLASSIFY_INVESTMENTS || "").toLowerCase() !== "true") return new Set();
   const raw = process.env.EXPENSE_AS_INVESTMENT ?? "Коучи\\преподаватели\\наставники";
   return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
 }
