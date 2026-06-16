@@ -237,6 +237,88 @@ export function Badge({ src }: { src: string }) {
   );
 }
 
+/* ===== Category colour palette (expenses, etc.) =====
+   Подбор устойчивых, различимых цветов в стиле дашборда. Категорий бывает много,
+   поэтому палитра циклична. Цвет назначается по порядку (обычно — по убыванию
+   суммы), чтобы donut и стопка-диаграмма красили одну категорию одинаково. */
+export const CAT_COLORS = [
+  "#16744f", // зелёный
+  "#a93b34", // красный
+  "#2f5c8f", // синий
+  "#c98a1e", // янтарь
+  "#6b4ea0", // фиолетовый
+  "#3d8b8b", // бирюзовый
+  "#b5603a", // терракота
+  "#9a8c3a", // оливковый
+  "#a23b6e", // пурпур
+  "#4a8c3a", // лист
+  "#5a6b8c", // сине-серый
+  "#c2682f", // оранжевый
+  "#8b5a8c", // лиловый
+  "#3a7ca0", // океан
+  "#b0903a", // золото
+  "#7c818b", // серый
+];
+
+/** Назначить цвета категориям по порядку (имена лучше передавать уже
+ *  отсортированными по убыванию суммы — так заметные категории получают
+ *  «сильные» первые цвета). Палитра циклична. */
+export function catColorMap(names: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  names.forEach((n, i) => {
+    map[n] = CAT_COLORS[i % CAT_COLORS.length];
+  });
+  return map;
+}
+
+/* Универсальный donut по категориям — структура расходов за период.
+   В центре — итог; сегменты подписаны через <title> (категория · сумма · %). */
+export function CategoryDonut({
+  data,
+  total,
+  fmtV,
+}: {
+  data: { name: string; value: number; color: string }[];
+  total?: number;
+  fmtV: (v: number) => string;
+}) {
+  const segs = data.filter((d) => d.value > 0);
+  const T = total || segs.reduce((s, d) => s + d.value, 0) || 1;
+  const C = 2 * Math.PI * 52;
+  let off = 0;
+  const circles = segs.map((s, i) => {
+    const len = (s.value / T) * C;
+    const el = (
+      <circle
+        key={i}
+        cx={60}
+        cy={60}
+        r={52}
+        fill="none"
+        stroke={s.color}
+        strokeWidth={14}
+        strokeDasharray={`${len.toFixed(1)} ${(C - len).toFixed(1)}`}
+        strokeDashoffset={(-off).toFixed(1)}
+      >
+        <title>{`${s.name}: ${fmtV(s.value)} · ${Math.round((s.value / T) * 100)}%`}</title>
+      </circle>
+    );
+    off += len;
+    return el;
+  });
+  return (
+    <div style={{ position: "relative", margin: "2px auto 16px", width: 168 }}>
+      <svg viewBox="0 0 120 120" style={{ width: 168, height: 168, display: "block", margin: "0 auto", transform: "rotate(-90deg)" }}>
+        {circles}
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <span className="mono" style={{ fontSize: 17, fontWeight: 500 }}>{fmtV(T)}</span>
+        <span className="k" style={{ fontSize: 9 }}>итого</span>
+      </div>
+    </div>
+  );
+}
+
 /* Capital-composition donut — mirrors renderDonut(). */
 export function Donut({ assets }: { assets: Asset[] }) {
   const T = assets.reduce((s, a) => s + a.value, 0);
