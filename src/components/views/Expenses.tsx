@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useApp } from "@/lib/store";
 import { fmt } from "@/lib/format";
-import { Badge } from "@/lib/chart";
+import { Badge, CategoryDonut, catColorMap } from "@/lib/chart";
 import { Topbar } from "../ui";
 
 const fmtSigned = (n: number): string => (n >= 0 ? "+" : "−") + fmt(Math.abs(n));
@@ -51,6 +51,50 @@ export default function Expenses() {
   const weekSubs = (selWeek?.weekEnd && store.expenseWeekSubs[selWeek.weekEnd]) || {};
   const maxWC = Math.max(1, ...weekCats.map((c) => c.value));
   const [openWeekCat, setOpenWeekCat] = useState<string | null>(null);
+
+  // Единая палитра категорий: объединяем имена из всех месяцев и недель,
+  // суммируем и сортируем по убыванию — заметные категории получают «сильные»
+  // первые цвета, и одна категория красится одинаково в donut и в стопке.
+  const catColors = useMemo(() => {
+    const totals: Record<string, number> = {};
+    const collect = (rec: Record<string, { name: string; value: number }[]>) => {
+      Object.values(rec).forEach((list) =>
+        list.forEach((c) => {
+          totals[c.name] = (totals[c.name] || 0) + c.value;
+        })
+      );
+    };
+    collect(store.expensesByPeriod);
+    collect(store.expenseWeeksByPeriod);
+    const names = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+    return catColorMap(names);
+  }, [store.expensesByPeriod, store.expenseWeeksByPeriod]);
+
+  // Категории выбранного периода (для donut и списка-легенды).
+  const activeCats = mode === "month" ? cats : weekCats;
+  const donutData = activeCats
+    .filter((c) => c.value > 0)
+    .map((c) => ({ name: c.name, value: c.value, color: catColors[c.name] || "var(--faint)" }));
+  const donutTotal = activeCats.reduce((s, c) => s + c.value, 0);
+
+  // Стопка-диаграмма по времени: для каждого периода — разбивка по категориям.
+  const stackBars = useMemo(() => {
+    if (mode === "month") {
+      return months.map((m) => {
+        const list = (m.period && store.expensesByPeriod[m.period]) || [];
+        return { label: m.m, cats: list, total: list.reduce((s, c) => s + c.value, 0) };
+      });
+    }
+    return weeks.map((w) => {
+      const list = (w.weekEnd && store.expenseWeeksByPeriod[w.weekEnd]) || [];
+      return { label: w.w, cats: list, total: list.reduce((s, c) => s + c.value, 0) };
+    });
+  }, [mode, months, weeks, store.expensesByPeriod, store.expenseWeeksByPeriod]);
+  const maxStack = Math.max(1, ...stackBars.map((b) => b.total));
+  const hasStack = stackBars.some((b) => b.total > 0);
+  const stackSelIdx = mode === "month" ? idx : wIdx;
+  const onStackSelect = (i: number) =>
+    mode === "month" ? setSelIdx(i) : (setSelWeekIdx(i), setOpenWeekCat(null));
 
   const expVal = sel?.v ?? 0;
   const incVal = sel?.income ?? 0;
@@ -142,6 +186,7 @@ export default function Expenses() {
           Нет данных. Расходы подтянутся из Google Sheets, доходы — из ДДС (дивиденды) при синхронизации.
         </div>
       ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20 }}>
           {/* Left card */}
           <div className="card" style={{ padding: 24 }}>
@@ -274,6 +319,10 @@ export default function Expenses() {
               <CurrencyToggle />
             </div>
 
+            {donutData.length > 0 && (
+              <CategoryDonut data={donutData} total={donutTotal} fmtV={fmtV} />
+            )}
+
             {mode === "month" && (
               cats.length === 0 ? (
                 <div className="h-sub">Нет категорий за этот месяц.</div>
@@ -289,9 +338,13 @@ export default function Expenses() {
                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "9px 0", background: "none", border: "none", cursor: sub.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
                       >
                         <span style={{ flex: "none", width: 12, color: "var(--faint)", fontSize: 13, transition: "transform .15s", transform: `rotate(${open ? 90 : 0}deg)`, opacity: sub.length ? 1 : 0 }}>›</span>
+                        <span style={{ flex: "none", width: 9, height: 9, borderRadius: 2, background: catColors[cat.name] || "var(--faint)" }} />
                         <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)" }}>{cat.name}</span>
-                        <div style={{ flex: "none", width: 70, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${((cat.value / maxC) * 100).toFixed(0)}%`, background: "var(--neg)", borderRadius: 5 }} />
+                        <span className="mono" style={{ flex: "none", width: 34, textAlign: "right", fontSize: 11, color: "var(--muted)" }}>
+                          {donutTotal ? Math.round((cat.value / donutTotal) * 100) : 0}%
+                        </span>
+                        <div style={{ flex: "none", width: 56, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${((cat.value / maxC) * 100).toFixed(0)}%`, background: catColors[cat.name] || "var(--neg)", borderRadius: 5 }} />
                         </div>
                         <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 12.5, fontWeight: 500 }}>
                           {fmtV(cat.value)}
@@ -333,9 +386,13 @@ export default function Expenses() {
                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "9px 0", background: "none", border: "none", cursor: sub.length ? "pointer" : "default", fontFamily: "var(--sans)", textAlign: "left" }}
                       >
                         <span style={{ flex: "none", width: 12, color: "var(--faint)", fontSize: 13, transition: "transform .15s", transform: `rotate(${open ? 90 : 0}deg)`, opacity: sub.length ? 1 : 0 }}>›</span>
+                        <span style={{ flex: "none", width: 9, height: 9, borderRadius: 2, background: catColors[cat.name] || "var(--faint)" }} />
                         <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)" }}>{cat.name}</span>
-                        <div style={{ flex: "none", width: 70, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${((cat.value / maxWC) * 100).toFixed(0)}%`, background: "var(--neg)", borderRadius: 5 }} />
+                        <span className="mono" style={{ flex: "none", width: 34, textAlign: "right", fontSize: 11, color: "var(--muted)" }}>
+                          {donutTotal ? Math.round((cat.value / donutTotal) * 100) : 0}%
+                        </span>
+                        <div style={{ flex: "none", width: 56, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${((cat.value / maxWC) * 100).toFixed(0)}%`, background: catColors[cat.name] || "var(--neg)", borderRadius: 5 }} />
                         </div>
                         <span className="mono" style={{ flex: "none", width: 72, textAlign: "right", fontSize: 12.5, fontWeight: 500 }}>
                           {fmtV(cat.value)}
@@ -362,6 +419,63 @@ export default function Expenses() {
               )
             )}
           </div>
+        </div>
+
+        {hasStack && (
+          <div className="card" style={{ padding: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, gap: 16, flexWrap: "wrap" }}>
+              <div className="k">Структура расходов по категориям{mode === "month" ? " · по месяцам" : " · по неделям"}</div>
+              <CurrencyToggle />
+            </div>
+            <div className="h-sub" style={{ marginBottom: 16 }}>
+              Высота столбца — сумма расходов за период; сегменты — категории. Нажмите на столбец, чтобы открыть его разбивку справа.
+            </div>
+
+            <div style={{ display: "flex", alignItems: "flex-end", gap: mode === "month" ? 10 : 5, height: mode === "month" ? 220 : 240 }}>
+              {stackBars.map((b, i) => {
+                const here = i === stackSelIdx;
+                const hPx = (b.total / maxStack) * (mode === "month" ? 175 : 165);
+                const segs = b.cats.filter((c) => c.value > 0).slice().sort((a, c) => c.value - a.value);
+                return (
+                  <button
+                    key={b.label}
+                    onClick={() => onStackSelect(i)}
+                    title={`${b.label}: ${fmtV(b.total)}`}
+                    style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 0, justifyContent: "flex-end", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "var(--sans)" }}
+                  >
+                    <div style={{ width: mode === "month" ? "62%" : "78%", maxWidth: 28, height: `${hPx.toFixed(0)}px`, display: "flex", flexDirection: "column", justifyContent: "flex-end", borderRadius: "4px 4px 0 0", overflow: "hidden", opacity: here ? 1 : 0.45, transition: "opacity .12s", marginBottom: 5 }}>
+                      {segs.map((c) => (
+                        <div
+                          key={c.name}
+                          title={`${c.name}: ${fmtV(c.value)}`}
+                          style={{ height: `${((c.value / b.total) * 100).toFixed(2)}%`, background: catColors[c.name] || "var(--faint)" }}
+                        />
+                      ))}
+                    </div>
+                    {mode === "month" ? (
+                      <span className="axis" style={{ fontFamily: "var(--mono)", fontSize: 10, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400 }}>
+                        {b.label}
+                      </span>
+                    ) : (
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400, writingMode: "vertical-rl", transform: "rotate(180deg)", height: 46, lineHeight: 1 }}>
+                        {b.label}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--hair-2)" }}>
+              {Object.keys(catColors).map((name) => (
+                <span key={name} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--ink-2)" }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: catColors[name], flex: "none" }} />
+                  {name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         </div>
       )}
     </>
