@@ -46,13 +46,13 @@ function periodOfDate(date: string): { period: string; iso: string } | null {
   return { period: `${m[3]}-${month}`, iso: `${m[3]}-${month}-${day}` };
 }
 
-/** Week (Sun–Sat, matching the "Отчет" week columns like 01.06–07.06) that
+/** Week (Mon–Sun, matching the "Отчет" week columns like 01.06–07.06) that
  *  contains the given ISO date. */
 function weekOf(iso: string): { weekEnd: string; label: string } {
   const d = new Date(iso + "T00:00:00Z");
-  const dow = d.getUTCDay(); // 0 = воскресенье
+  const fromMonday = (d.getUTCDay() + 6) % 7; // Пн→0, Вт→1 … Вс→6
   const start = new Date(d);
-  start.setUTCDate(d.getUTCDate() - dow);
+  start.setUTCDate(d.getUTCDate() - fromMonday);
   const end = new Date(start);
   end.setUTCDate(start.getUTCDate() + 6);
   const p = (n: number) => String(n).padStart(2, "0");
