@@ -3,7 +3,7 @@
  * per-week using the rate at the week's end date (CBR, with fallback). */
 import "server-only";
 import { prisma } from "../prisma";
-import { readValues } from "../sheets";
+import { readValues, readValuesFrom, listSheetTitles } from "../sheets";
 import { getUsdRubRates } from "../fx";
 
 const MONTH_NUM: Record<string, number> = {
@@ -30,6 +30,75 @@ function excludeSet(): Set<string> {
 function investSubcatSet(): Set<string> {
   const raw = process.env.EXPENSE_AS_INVESTMENT ?? "Коучи\\преподаватели\\наставники";
   return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
+/** "24.12.2025" → { period: "2025-12", iso: "2025-12-24" }. */
+function periodOfDate(date: string): { period: string; iso: string } | null {
+  const m = (date || "").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!m) return null;
+  const day = m[1].padStart(2, "0");
+  const month = m[2].padStart(2, "0");
+  return { period: `${m[3]}-${month}`, iso: `${m[3]}-${month}-${day}` };
+}
+
+interface DdsCols {
+  headerRow: number;
+  date: number;
+  sum: number;
+  comment: number;
+  statya: number;
+  podstatya: number;
+}
+
+/** Locate the ДДС ledger header (Дата/Сумма/Статья/Подстатья) + comment column.
+ *  Comment defaults to column H (index 7) if no "Комментарий" header is found. */
+function findDdsCols(rows: string[][]): DdsCols | null {
+  for (let r = 0; r < Math.min(rows.length, 40); r++) {
+    const cells = (rows[r] || []).map((c) => (c || "").trim().toLowerCase());
+    const date = cells.findIndex((c) => c === "дата");
+    const sum = cells.findIndex((c) => c === "сумма");
+    const statya = cells.findIndex((c) => c === "статья");
+    const podstatya = cells.findIndex((c) => c === "подстатья");
+    if (date >= 0 && sum >= 0 && statya >= 0 && podstatya >= 0) {
+      let comment = cells.findIndex((c) => c.includes("коммент"));
+      if (comment < 0) comment = 7; // столбец H
+      return { headerRow: r, date, sum, comment, statya, podstatya };
+    }
+  }
+  return null;
+}
+
+/** Read the ДДС ledger (flat payment journal) from the same spreadsheet as the
+ *  report. The ledger tab is auto-discovered (override via
+ *  GOOGLE_SHEETS_DDS_LEDGER_TAB). Returns null if not found — drill-down then
+ *  simply stays empty and the sync still succeeds. */
+async function readDdsLedger(): Promise<(DdsCols & { rows: string[][] }) | null> {
+  const id = process.env.GOOGLE_SHEETS_ID;
+  if (!id) return null;
+  const override = process.env.GOOGLE_SHEETS_DDS_LEDGER_TAB;
+  const titles = override ? [override] : await listSheetTitles(id);
+  for (const tab of titles) {
+    const rows = await readValuesFrom(id, tab, "A1:N5000");
+    const cols = findDdsCols(rows);
+    if (cols) return { ...cols, rows };
+  }
+  return null;
+}
+
+/** Scale raw payment amounts so they sum exactly to `target` (the subcategory's
+ *  USD total from the report) — sidesteps currency/rate questions and keeps the
+ *  payments consistent with the displayed subtotal. */
+function calibrate(txns: { date: string; comment: string; raw: number }[], target: number) {
+  const rawSum = txns.reduce((s, t) => s + t.raw, 0);
+  if (rawSum <= 0) return [];
+  const out = txns.map((t) => ({ date: t.date, comment: t.comment, value: Math.round((t.raw / rawSum) * target) }));
+  let diff = target - out.reduce((s, t) => s + t.value, 0);
+  if (diff !== 0 && out.length) {
+    let bi = 0;
+    for (let i = 1; i < out.length; i++) if (out[i].value > out[bi].value) bi = i;
+    out[bi].value += diff;
+  }
+  return out;
 }
 
 export interface ExpenseSyncResult {
@@ -73,7 +142,7 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
 
   // Month-summary columns and weekly columns.
   const monthCols: { c: number; year: number; month: number }[] = [];
-  const weekCols: { c: number; endISO: string }[] = [];
+  const weekCols: { c: number; endISO: string; startISO: string }[] = [];
   for (let c = 1; c < headers.length; c++) {
     const h = (headers[c] || "").trim();
     const ml = MONTH_NUM[h.toLowerCase()];
@@ -83,10 +152,17 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     }
     const m = h.match(/^(\d{2})\.(\d{2})-(\d{2})\.(\d{2})$/);
     if (m) {
+      const startDay = +m[1];
+      const startMon = +m[2];
       const endDay = +m[3];
       const endMon = +m[4];
-      const year = endMon === 12 ? reportYear - 1 : reportYear;
-      weekCols.push({ c, endISO: `${year}-${String(endMon).padStart(2, "0")}-${String(endDay).padStart(2, "0")}` });
+      const endYear = endMon === 12 ? reportYear - 1 : reportYear;
+      const startYear = startMon === 12 ? reportYear - 1 : reportYear;
+      weekCols.push({
+        c,
+        endISO: `${endYear}-${String(endMon).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`,
+        startISO: `${startYear}-${String(startMon).padStart(2, "0")}-${String(startDay).padStart(2, "0")}`,
+      });
     }
   }
 
@@ -232,6 +308,49 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
   const orderedWeeks = weekCols.map((w) => w.endISO).sort();
   const lastWeeks = orderedWeeks.slice(-12);
 
+  // 5c) ДДС ledger → individual payments per subcategory (for the drill-down).
+  // Keyed by "period||Статья||Подстатья" (monthly) and "weekEnd||..." (weekly);
+  // each entry keeps the raw amount + comment + date. Calibrated at persist time
+  // so payments sum to the subcategory total. Optional: if the ledger isn't
+  // found/readable the sync still succeeds with an empty drill-down.
+  type Tx = { date: string; comment: string; raw: number };
+  const txMonth = new Map<string, Tx[]>();
+  const txWeek = new Map<string, Tx[]>();
+  const lastKeySet = new Set(lastKeys);
+  const lastWeekSet = new Set(lastWeeks);
+  const findWeekEnd = (iso: string): string | undefined =>
+    weekCols.find((w) => w.startISO <= iso && iso <= w.endISO)?.endISO;
+  try {
+    const led = await readDdsLedger();
+    if (led) {
+      for (let r = led.headerRow + 1; r < led.rows.length; r++) {
+        const row = led.rows[r] || [];
+        const sub = (row[led.podstatya] || "").trim();
+        if (!sub) continue;
+        const parent = subToParent.get(sub);
+        // Only known expense subcategories (excludes income, transfers, and
+        // подстатьи reclassified as investments — these have no expense subtotal).
+        if (!parent || exclude.has(parent) || investSubcats.has(sub)) continue;
+        const p = periodOfDate(row[led.date] || "");
+        if (!p) continue;
+        const raw = Math.abs(parseNum(row[led.sum]));
+        if (!raw) continue;
+        const t: Tx = { date: p.iso, comment: (row[led.comment] || "").trim(), raw };
+        if (lastKeySet.has(p.period)) {
+          const k = `${p.period}||${parent}||${sub}`;
+          (txMonth.get(k) || txMonth.set(k, []).get(k)!).push(t);
+        }
+        const we = findWeekEnd(p.iso);
+        if (we && lastWeekSet.has(we)) {
+          const k = `${we}||${parent}||${sub}`;
+          (txWeek.get(k) || txWeek.set(k, []).get(k)!).push(t);
+        }
+      }
+    }
+  } catch {
+    /* ledger optional — drill-down stays empty, never fails the sync */
+  }
+
   // 6) Persist.
   await prisma.$transaction(async (tx) => {
     await tx.expenseMonth.deleteMany();
@@ -241,6 +360,8 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     await tx.expenseWeek.deleteMany();
     await tx.expenseWeekCategory.deleteMany();
     await tx.expenseWeekSubcategory.deleteMany();
+    await tx.expenseTransaction.deleteMany();
+    await tx.expenseWeekTransaction.deleteMany();
 
     // Reclassified investments (e.g. coaching/education) — stored for ALL months
     // of the report, not just the shown window, so large one-off payments show
@@ -282,7 +403,15 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
         if (exclude.has(parent)) continue;
         for (const [subName, v] of sm) {
           const value = Math.round(v);
-          if (value > 0) await tx.expenseSubcategory.create({ data: { period: key, parent, name: subName, value } });
+          if (value <= 0) continue;
+          await tx.expenseSubcategory.create({ data: { period: key, parent, name: subName, value } });
+          // Individual payments (calibrated to the subcategory total).
+          const payments = txMonth.get(`${key}||${parent}||${subName}`);
+          if (payments && payments.length) {
+            for (const t of calibrate(payments, value)) {
+              await tx.expenseTransaction.create({ data: { period: key, parent, sub: subName, date: t.date, comment: t.comment, value: t.value } });
+            }
+          }
         }
       }
     }
@@ -307,7 +436,14 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
           if (exclude.has(parent)) continue;
           for (const [subName, v] of wsm) {
             const value = Math.round(v);
-            if (value > 0) await tx.expenseWeekSubcategory.create({ data: { weekEnd: endISO, parent, name: subName, value } });
+            if (value <= 0) continue;
+            await tx.expenseWeekSubcategory.create({ data: { weekEnd: endISO, parent, name: subName, value } });
+            const payments = txWeek.get(`${endISO}||${parent}||${subName}`);
+            if (payments && payments.length) {
+              for (const t of calibrate(payments, value)) {
+                await tx.expenseWeekTransaction.create({ data: { weekEnd: endISO, parent, sub: subName, date: t.date, comment: t.comment, value: t.value } });
+              }
+            }
           }
         }
       }
