@@ -712,7 +712,7 @@ export default function Expenses() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20 }}>
+        <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 360px", gap: 20 }}>
           {/* Left card */}
           <div className="card" style={{ padding: 24 }}>
             <div style={{ marginBottom: 18 }}>
