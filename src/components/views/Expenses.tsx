@@ -775,7 +775,7 @@ export default function Expenses() {
                   showExpense={show.expenses}
                   showDiff={show.diff}
                   verticalLabels={false}
-                  minSlot={54}
+                  minSlot={62}
                 />
                 <div className="h-sub" style={{ marginTop: 12 }}>
                   {split
@@ -812,7 +812,7 @@ export default function Expenses() {
                   showExpense={true}
                   showDiff={false}
                   verticalLabels={true}
-                  minSlot={34}
+                  minSlot={46}
                 />
                 <div className="h-sub" style={{ marginTop: 12 }}>
                   {split
