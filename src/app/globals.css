@@ -185,7 +185,7 @@ body[data-theme="dark"] .toast{background:#2a2f37;}
   .mobile-tabbar a svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;}
   .mobile-tabbar a.on{color:var(--ink);}
   /* grids collapse on mobile */
-  .grid-2col{grid-template-columns:1fr!important;}
+  .grid-2col{grid-template-columns:minmax(0,1fr)!important;}
   .grid-4col{grid-template-columns:1fr 1fr!important;}
   .grid-sticky{grid-template-columns:1fr!important;}
   .hero-pair{grid-template-columns:1fr!important;}
