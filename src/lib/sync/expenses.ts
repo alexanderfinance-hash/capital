@@ -192,8 +192,12 @@ export async function syncExpenses(): Promise<ExpenseSyncResult> {
     pushTx(weekTx, wk.weekEnd, statya, sub, tx);
   }
 
-  const lastKeys = [...monthTx.keys()].sort().slice(-6);
-  const lastWeeks = [...weekTx.keys()].sort().slice(-12);
+  // Сколько истории храним/показываем. Настраивается через ENV; по умолчанию
+  // ~2 года месяцев и ~1 год недель — чтобы график можно было прокручивать назад.
+  const MONTHS_BACK = Math.max(1, Number(process.env.EXPENSES_MONTHS_BACK) || 24);
+  const WEEKS_BACK = Math.max(1, Number(process.env.EXPENSES_WEEKS_BACK) || 53);
+  const lastKeys = [...monthTx.keys()].sort().slice(-MONTHS_BACK);
+  const lastWeeks = [...weekTx.keys()].sort().slice(-WEEKS_BACK);
   const latest = lastKeys[lastKeys.length - 1] || "";
 
   // Collect rows, then write with createMany (fast, avoids per-row round-trips).
