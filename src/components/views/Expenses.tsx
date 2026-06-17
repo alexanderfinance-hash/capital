@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/store";
 import { fmt } from "@/lib/format";
 import { Badge, CategoryDonut, catColorMap, Money } from "@/lib/chart";
@@ -233,6 +233,225 @@ function StackedChart({
   );
 }
 
+interface TimelineBar {
+  label: string;
+  expense: number;
+  income: number;
+  cats: { name: string; value: number }[];
+}
+
+/* Прокручиваемая столбчатая диаграмма по времени с фиксированной осью сумм
+   справа и временным ползунком. Каждый столбец — период; в режиме «по
+   категориям» столбец расходов делится на сегменты-категории. При наведении
+   на столбец — тултип у курсора с суммой расхода за период. Размер столбцов
+   фиксирован (minSlot): пока периодов мало — растягиваются на всю ширину,
+   когда много — включается горизонтальная прокрутка. */
+function TimelineChart({
+  bars,
+  maxVal,
+  colors,
+  fmtV,
+  fmtVSigned,
+  selIdx,
+  onSelect,
+  split,
+  showIncome,
+  showExpense,
+  showDiff,
+  verticalLabels,
+  minSlot,
+}: {
+  bars: TimelineBar[];
+  maxVal: number;
+  colors: Record<string, string>;
+  fmtV: (v: number) => string;
+  fmtVSigned: (v: number) => string;
+  selIdx: number;
+  onSelect: (i: number) => void;
+  split: boolean;
+  showIncome: boolean;
+  showExpense: boolean;
+  showDiff: boolean;
+  verticalLabels: boolean;
+  minSlot: number;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [wrapW, setWrapW] = useState(0);
+  const [hover, setHover] = useState<{ i: number; cat?: string; catVal?: number } | null>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [scroll, setScroll] = useState({ left: 0, max: 0 });
+
+  const PLOT_H = 188;
+  const AXIS_W = 58;
+  const LABEL_H = verticalLabels ? 52 : 18;
+  const top = niceMax(maxVal);
+  const TICKS = 4;
+  const ticks = Array.from({ length: TICKS + 1 }, (_, t) => {
+    const frac = t / TICKS; // 0 — сверху
+    return { val: top * (1 - frac), y: frac * PLOT_H };
+  });
+
+  // измеряем ширину области прокрутки → ширина слота
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const sync = () => {
+      setWrapW(el.clientWidth);
+      setScroll({ left: el.scrollLeft, max: el.scrollWidth - el.clientWidth });
+    };
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    sync();
+    return () => ro.disconnect();
+  }, []);
+
+  const n = Math.max(1, bars.length);
+  const slotW = wrapW > 0 ? Math.max(minSlot, wrapW / n) : minSlot;
+  const contentW = slotW * n;
+  const overflow = contentW > wrapW + 1;
+
+  // авто-прокрутка к выбранному периоду
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const target = slotW * selIdx + slotW / 2 - el.clientWidth / 2;
+    el.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selIdx, slotW]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (el) setScroll({ left: el.scrollLeft, max: el.scrollWidth - el.clientWidth });
+  };
+  const onSlider = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = Number(e.target.value);
+  };
+  const onMove = (e: React.MouseEvent) => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setPos({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+
+  const hoverBar = hover ? bars[hover.i] : null;
+  const hoverNet = hoverBar ? hoverBar.income - hoverBar.expense : 0;
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+      <div style={{ display: "flex", alignItems: "flex-start" }}>
+        <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minWidth: 0, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "thin" }}>
+          <div style={{ width: contentW, minWidth: "100%" }}>
+            {/* область столбцов + сетка */}
+            <div style={{ position: "relative", height: PLOT_H }}>
+              {ticks.map((t, i) => (
+                <div key={i} style={{ position: "absolute", left: 0, right: 0, top: t.y, borderTop: "1px dashed var(--hair)" }} />
+              ))}
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-end" }}>
+                {bars.map((b, i) => {
+                  const here = i === selIdx;
+                  const hot = hover?.i === i;
+                  const op = here || hot ? 1 : 0.45;
+                  const net = b.income - b.expense;
+                  const expH = (b.expense / top) * PLOT_H;
+                  const incH = (b.income / top) * PLOT_H;
+                  const segs = b.cats.filter((c) => c.value > 0).slice().sort((a, c) => c.value - a.value);
+                  return (
+                    <button
+                      key={b.label}
+                      onClick={() => onSelect(i)}
+                      onMouseEnter={() => setHover({ i })}
+                      style={{ width: slotW, flex: "0 0 auto", height: "100%", position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                    >
+                      {showDiff && (showIncome || showExpense) && (
+                        <span className="mono" style={{ position: "absolute", left: 0, right: 0, top: Math.max(0, PLOT_H - Math.max(expH, incH) - 15), textAlign: "center", fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here || hot ? 1 : 0.55, pointerEvents: "none" }}>
+                          {fmtVSigned(net)}
+                        </span>
+                      )}
+                      {showIncome && (
+                        <div style={{ width: Math.min(22, slotW * 0.3), height: `${incH.toFixed(1)}px`, background: "var(--pos)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
+                      )}
+                      {showExpense && (split ? (
+                        <div style={{ width: Math.min(28, slotW * (showIncome ? 0.3 : 0.5)), height: `${expH.toFixed(1)}px`, display: "flex", flexDirection: "column", justifyContent: "flex-end", borderRadius: "4px 4px 0 0", overflow: "hidden", opacity: op, transition: "opacity .12s" }}>
+                          {segs.map((c) => {
+                            const segOn = hot && hover?.cat === c.name;
+                            return (
+                              <div
+                                key={c.name}
+                                onMouseEnter={(e) => { e.stopPropagation(); setHover({ i, cat: c.name, catVal: c.value }); }}
+                                style={{ height: `${b.expense ? ((c.value / b.expense) * 100).toFixed(2) : 0}%`, background: colors[c.name] || "var(--faint)", filter: segOn ? "brightness(1.15)" : "none", boxShadow: segOn ? "inset 0 0 0 1.5px var(--surface)" : "none" }}
+                              />
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ width: Math.min(22, slotW * (showIncome ? 0.3 : 0.46)), height: `${expH.toFixed(1)}px`, background: "var(--neg)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
+                      ))}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* подписи периодов */}
+            <div style={{ display: "flex", marginTop: 6 }}>
+              {bars.map((b, i) => {
+                const here = i === selIdx;
+                return (
+                  <div key={b.label} style={{ width: slotW, flex: "0 0 auto", display: "flex", justifyContent: "center", height: LABEL_H }}>
+                    {verticalLabels ? (
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400, writingMode: "vertical-rl", transform: "rotate(180deg)", lineHeight: 1 }}>{b.label}</span>
+                    ) : (
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400 }}>{b.label}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {/* фиксированная ось сумм справа */}
+        <div style={{ width: AXIS_W, position: "relative", height: PLOT_H, marginLeft: 8, flex: "none" }}>
+          {ticks.map((t, i) => (
+            <span key={i} className="mono" style={{ position: "absolute", top: t.y, right: 0, transform: "translateY(-50%)", fontSize: 9.5, color: "var(--muted)", whiteSpace: "nowrap" }}>
+              <Money>{fmtV(t.val)}</Money>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* временной ползунок (только когда периодов больше, чем влезает) */}
+      {overflow && (
+        <div style={{ display: "flex", alignItems: "center", marginTop: 12, paddingRight: AXIS_W + 8 }}>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(1, scroll.max)}
+            value={Math.min(scroll.left, scroll.max)}
+            onChange={onSlider}
+            aria-label="Прокрутка по времени"
+            style={{ flex: 1, accentColor: "var(--ink-2)", cursor: "pointer" }}
+          />
+        </div>
+      )}
+
+      {/* тултип у курсора — сумма расхода за период */}
+      {hover && hoverBar && (
+        <div style={{ position: "absolute", left: pos.x, top: pos.y, transform: "translate(-50%, calc(-100% - 12px))", pointerEvents: "none", background: "var(--ink)", color: "var(--surface)", borderRadius: 6, padding: "6px 10px", fontSize: 11.5, lineHeight: 1.4, whiteSpace: "nowrap", textAlign: "center", boxShadow: "0 4px 14px rgba(0,0,0,.18)", zIndex: 5 }}>
+          <div style={{ opacity: 0.7, fontSize: 10 }}>{hoverBar.label}</div>
+          <div className="mono" style={{ fontWeight: 600 }}>Расход <Money>{fmtV(hoverBar.expense)}</Money></div>
+          {showIncome && hoverBar.income > 0 && (
+            <div className="mono" style={{ fontSize: 10.5, opacity: 0.85 }}>
+              Доход <Money>{fmtV(hoverBar.income)}</Money> · {fmtVSigned(hoverNet)}
+            </div>
+          )}
+          {hover.cat && (
+            <div style={{ fontSize: 10, opacity: 0.85, marginTop: 1 }}>{hover.cat}: <Money>{fmtV(hover.catVal || 0)}</Money></div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Expenses() {
   const { store, usdRub, refreshExpenses, expensesSyncing } = useApp();
   const months = store.expenseMonths;
@@ -248,6 +467,7 @@ export default function Expenses() {
   const [openCat, setOpenCat] = useState<string | null>(null);
   const [openSub, setOpenSub] = useState<string | null>(null);
   const [openWeekSub, setOpenWeekSub] = useState<string | null>(null);
+  const [split, setSplit] = useState(false);
   const toggle = (k: SeriesKey) => setShow((p) => ({ ...p, [k]: !p[k] }));
 
   const conv = (v: number) => currency === "RUB" ? v * usdRub : v;
@@ -322,13 +542,33 @@ export default function Expenses() {
   const diffVal = incVal - expVal;
   const hasIncome = months.some((m) => (m.income ?? 0) > 0);
 
-  const scaleVals: number[] = [];
-  months.forEach((m) => {
-    if (show.expenses) scaleVals.push(m.v);
-    if (show.income) scaleVals.push(m.income ?? 0);
-  });
-  const maxM = Math.max(1, ...scaleVals);
   const maxW = Math.max(1, ...weeks.map((w) => w.v));
+
+  // Данные для прокручиваемой диаграммы по времени (верхний график).
+  const monthBars: TimelineBar[] = useMemo(
+    () =>
+      months.map((m) => ({
+        label: m.m,
+        expense: m.v,
+        income: m.income ?? 0,
+        cats: (m.period && store.expensesByPeriod[m.period]) || [],
+      })),
+    [months, store.expensesByPeriod]
+  );
+  const weekBars: TimelineBar[] = useMemo(
+    () =>
+      weeks.map((w) => ({
+        label: w.w,
+        expense: w.v,
+        income: 0,
+        cats: (w.weekEnd && store.expenseWeeksByPeriod[w.weekEnd]) || [],
+      })),
+    [weeks, store.expenseWeeksByPeriod]
+  );
+  const monthChartMax = Math.max(
+    1,
+    ...months.map((m) => Math.max(show.expenses ? m.v : 0, show.income ? m.income ?? 0 : 0))
+  );
 
   const SERIES: { key: SeriesKey; label: string; color: string }[] = [
     { key: "income", label: "Доходы", color: "var(--pos)" },
@@ -398,6 +638,38 @@ export default function Expenses() {
     </div>
   );
 
+  // Переключатель вида столбцов: сумма ↔ разбивка по категориям
+  const SplitToggle = () => (
+    <div style={{ display: "flex", gap: 2, background: "var(--hair-2)", borderRadius: 8, padding: 3 }}>
+      {([["sum", "Сумма"], ["cats", "По категориям"]] as const).map(([k, l]) => {
+        const on = (k === "cats") === split;
+        return (
+          <button
+            key={k}
+            onClick={() => setSplit(k === "cats")}
+            title={k === "cats" ? "Разбить столбец расходов на категории" : "Показывать расход одной суммой"}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 6,
+              border: "none",
+              background: on ? "var(--card)" : "transparent",
+              color: on ? "var(--ink)" : "var(--muted)",
+              cursor: "pointer",
+              fontFamily: "var(--sans)",
+              fontSize: 11.5,
+              fontWeight: on ? 600 : 400,
+              boxShadow: on ? "0 1px 3px rgba(0,0,0,.08)" : "none",
+              transition: "all .12s",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {l}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <>
       <Topbar
@@ -460,102 +732,92 @@ export default function Expenses() {
                       </div>
                     ))}
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {SERIES.map((s) => {
-                      const on = show[s.key];
-                      const disabled = s.key === "income" && !hasIncome;
-                      return (
-                        <button
-                          key={s.key}
-                          onClick={() => toggle(s.key)}
-                          title={disabled ? "Доходы появятся после синхронизации ДДС" : undefined}
-                          style={{
-                            display: "inline-flex", alignItems: "center", gap: 6,
-                            padding: "5px 11px", borderRadius: 999,
-                            border: "1px solid var(--hair)",
-                            background: on ? "var(--hair-2)" : "transparent",
-                            cursor: "pointer", fontFamily: "var(--sans)", fontSize: 12,
-                            color: on ? "var(--ink)" : "var(--faint)",
-                            opacity: disabled ? 0.5 : 1,
-                          }}
-                        >
-                          <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, opacity: on ? 1 : 0.35 }} />
-                          {s.label}
-                        </button>
-                      );
-                    })}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                    <SplitToggle />
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {SERIES.map((s) => {
+                        const on = show[s.key];
+                        const disabled = s.key === "income" && !hasIncome;
+                        return (
+                          <button
+                            key={s.key}
+                            onClick={() => toggle(s.key)}
+                            title={disabled ? "Доходы появятся после синхронизации ДДС" : undefined}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                              padding: "5px 11px", borderRadius: 999,
+                              border: "1px solid var(--hair)",
+                              background: on ? "var(--hair-2)" : "transparent",
+                              cursor: "pointer", fontFamily: "var(--sans)", fontSize: 12,
+                              color: on ? "var(--ink)" : "var(--faint)",
+                              opacity: disabled ? 0.5 : 1,
+                            }}
+                          >
+                            <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, opacity: on ? 1 : 0.35 }} />
+                            {s.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 200 }}>
-                  {months.map((x, i) => {
-                    const xi = x.income ?? 0;
-                    const net = xi - x.v;
-                    const here = i === idx;
-                    return (
-                      <button
-                        key={x.period ?? x.m}
-                        onClick={() => setSelIdx(i)}
-                        title={`${x.m}: расходы ${fmtV(x.v)}${xi ? ` · доходы ${fmtV(xi)}` : ""}`}
-                        style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 7, justifyContent: "flex-end", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "var(--sans)" }}
-                      >
-                        {show.diff && (show.income || show.expenses) && (
-                          <span className="mono" style={{ fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here ? 1 : 0.6 }}>
-                            <Money>{fmtVSigned(net)}</Money>
-                          </span>
-                        )}
-                        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 150, width: "100%", justifyContent: "center" }}>
-                          {show.income && (
-                            <div title={`Доходы ${fmtV(xi)}`} style={{ width: show.expenses ? "30%" : "46%", maxWidth: 22, height: `${((xi / maxM) * 150).toFixed(0)}px`, background: "var(--pos)", borderRadius: "4px 4px 0 0", opacity: here ? 0.95 : 0.4, transition: "opacity .12s" }} />
-                          )}
-                          {show.expenses && (
-                            <div title={`Расходы ${fmtV(x.v)}`} style={{ width: show.income ? "30%" : "46%", maxWidth: 22, height: `${((x.v / maxM) * 150).toFixed(0)}px`, background: "var(--neg)", borderRadius: "4px 4px 0 0", opacity: here ? 0.95 : 0.4, transition: "opacity .12s" }} />
-                          )}
-                        </div>
-                        <span className="axis" style={{ fontFamily: "var(--mono)", fontSize: 10, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400 }}>
-                          {x.m}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <TimelineChart
+                  bars={monthBars}
+                  maxVal={monthChartMax}
+                  colors={catColors}
+                  fmtV={fmtV}
+                  fmtVSigned={fmtVSigned}
+                  selIdx={idx}
+                  onSelect={(i) => { setSelIdx(i); setOpenCat(null); setOpenSub(null); }}
+                  split={split}
+                  showIncome={show.income}
+                  showExpense={show.expenses}
+                  showDiff={show.diff}
+                  verticalLabels={false}
+                  minSlot={54}
+                />
                 <div className="h-sub" style={{ marginTop: 12 }}>
-                  {hasIncome
-                    ? "Зелёный — доходы (дивиденды из ДДС), красный — расходы. Нажмите на месяц, чтобы увидеть его категории."
-                    : "Нажмите на столбец месяца, чтобы посмотреть его категории. Доходы появятся после синхронизации ДДС."}
+                  {split
+                    ? "Столбец расходов разбит на категории. Наведите курсор на столбец — увидите сумму за период; нажмите — категории справа."
+                    : hasIncome
+                    ? "Зелёный — доходы (дивиденды из ДДС), красный — расходы. «По категориям» делит расход на сегменты; нажмите на месяц — категории справа."
+                    : "Нажмите на столбец месяца, чтобы посмотреть его категории. «По категориям» делит расход на сегменты. Доходы появятся после синхронизации ДДС."}
                 </div>
               </>
             )}
 
             {mode === "week" && (
               <>
-                <div style={{ marginBottom: 18 }}>
-                  <div className="k">Расходы за {selWeek?.w ?? "—"}</div>
-                  <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-.02em", marginTop: 6, lineHeight: 1, color: "var(--neg)" }}>
-                    <Money>{fmtV(selWeek?.v ?? 0)}</Money>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="k">Расходы за {selWeek?.w ?? "—"}</div>
+                    <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-.02em", marginTop: 6, lineHeight: 1, color: "var(--neg)" }}>
+                      <Money>{fmtV(selWeek?.v ?? 0)}</Money>
+                    </div>
                   </div>
+                  <SplitToggle />
                 </div>
 
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 200 }}>
-                  {weeks.map((x, i) => {
-                    const here = i === wIdx;
-                    return (
-                      <button
-                        key={x.weekEnd}
-                        onClick={() => { setSelWeekIdx(i); setOpenWeekCat(null); }}
-                        title={`${x.w}: ${fmtV(x.v)}`}
-                        style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 0, justifyContent: "flex-end", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "var(--sans)", minWidth: 0 }}
-                      >
-                        <div style={{ width: "70%", maxWidth: 22, height: `${((x.v / maxW) * 150).toFixed(0)}px`, background: "var(--neg)", borderRadius: "4px 4px 0 0", opacity: here ? 0.95 : 0.4, transition: "opacity .12s", marginBottom: 4 }} />
-                        <span style={{ fontFamily: "var(--mono)", fontSize: 8, color: here ? "var(--ink)" : "var(--muted)", fontWeight: here ? 600 : 400, writingMode: "vertical-rl", transform: "rotate(180deg)", height: 46, lineHeight: 1 }}>
-                          {x.w}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <TimelineChart
+                  bars={weekBars}
+                  maxVal={maxW}
+                  colors={catColors}
+                  fmtV={fmtV}
+                  fmtVSigned={fmtVSigned}
+                  selIdx={wIdx}
+                  onSelect={(i) => { setSelWeekIdx(i); setOpenWeekCat(null); setOpenWeekSub(null); }}
+                  split={split}
+                  showIncome={false}
+                  showExpense={true}
+                  showDiff={false}
+                  verticalLabels={true}
+                  minSlot={34}
+                />
                 <div className="h-sub" style={{ marginTop: 12 }}>
-                  Нажмите на неделю, чтобы увидеть её категории.
+                  {split
+                    ? "Столбец расходов разбит на категории. Наведите курсор на столбец — увидите сумму за неделю; нажмите — категории справа."
+                    : "Наведите курсор на столбец — увидите сумму за неделю; нажмите на неделю — категории справа. «По категориям» делит расход на сегменты."}
                 </div>
               </>
             )}
