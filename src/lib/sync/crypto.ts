@@ -48,6 +48,8 @@ const COIN_META: Record<string, { name: string; icon: string }> = {
   TON: { name: "Toncoin", icon: "coins" },
   USDT: { name: "USDT", icon: "wallet" },
   USDC: { name: "USDC", icon: "wallet" },
+  WBTC: { name: "WBTC (Bitcoin)", icon: "coins" },
+  BTCB: { name: "BTCB (Bitcoin)", icon: "coins" },
 };
 
 export interface CryptoSyncResult {

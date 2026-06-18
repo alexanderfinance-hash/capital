@@ -5,10 +5,11 @@ import { Icon } from "./Icon";
 import { useApp } from "@/lib/store";
 
 const CHAINS = [
-  { v: "BTC", l: "Bitcoin" },
-  { v: "ETH", l: "Ethereum" },
-  { v: "TRX", l: "Tron" },
-  { v: "TON", l: "TON" },
+  { v: "BTC", l: "Bitcoin", note: "Отслеживается BTC на адресе." },
+  { v: "ETH", l: "Ethereum (ERC-20)", note: "Отслеживаются ETH + токены USDT, USDC и WBTC на этом адресе — отдельно монету выбирать не нужно." },
+  { v: "BSC", l: "BNB Chain (BEP-20)", note: "Отслеживаются BNB + токены USDT, USDC и BTCB на этом адресе." },
+  { v: "TRX", l: "Tron (TRC-20)", note: "Отслеживаются TRX + USDT (TRC-20) на этом адресе." },
+  { v: "TON", l: "TON", note: "Отслеживается TON на адресе." },
 ];
 
 export function AddPersonalWalletModal({ onClose }: { onClose: () => void }) {
@@ -52,13 +53,16 @@ export function AddPersonalWalletModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="modal-body">
           <label className="fld">
-            <span className="k">Сеть / монета</span>
+            <span className="k">Сеть</span>
             <div className="seg-cat">
               {CHAINS.map((c) => (
                 <button key={c.v} type="button" className={chain === c.v ? "on" : ""} onClick={() => setChain(c.v)}>
                   {c.l}
                 </button>
               ))}
+            </div>
+            <div className="hint" style={{ marginTop: 6 }}>
+              {CHAINS.find((c) => c.v === chain)?.note}
             </div>
           </label>
           <label className="fld">
@@ -69,7 +73,11 @@ export function AddPersonalWalletModal({ onClose }: { onClose: () => void }) {
             <span className="k">Название (необязательно)</span>
             <input type="text" placeholder="Напр. Холодный BTC" autoComplete="off" value={label} onChange={(e) => setLabel(e.target.value)} />
           </label>
-          <div className="hint">Баланс подтянется автоматически сразу после добавления.</div>
+          <div className="hint">
+            Баланс и цена подтянутся автоматически сразу после добавления и обновляются при каждой синхронизации.
+            Когда USDT обменяется на BTC: если биткоин придёт на этот же адрес (как WBTC/BTCB) — он подхватится здесь;
+            если на отдельный BTC-адрес — добавьте его как «Bitcoin». Холдинги пересчитываются на каждом синке, лишних действий не нужно.
+          </div>
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>

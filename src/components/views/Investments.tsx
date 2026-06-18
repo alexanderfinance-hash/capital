@@ -9,7 +9,7 @@ import { Icon } from "../Icon";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow, SyncStamp } from "../ui";
 import { AddPersonalWalletModal } from "../AddPersonalWalletModal";
 
-const CHAIN_LABEL: Record<string, string> = { BTC: "Bitcoin", ETH: "Ethereum", TRX: "Tron", TON: "TON" };
+const CHAIN_LABEL: Record<string, string> = { BTC: "Bitcoin", ETH: "Ethereum", BSC: "BNB Chain", TRX: "Tron", TON: "TON" };
 
 export default function Investments() {
   const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast, cryptoHistory, tonNumberRate } = useApp();

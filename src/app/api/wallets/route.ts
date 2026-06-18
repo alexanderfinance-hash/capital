@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth-server";
 
 export const runtime = "nodejs";
 
-const CHAINS = ["BTC", "ETH", "TRX", "TON"];
+const CHAINS = ["BTC", "ETH", "BSC", "TRX", "TON"];
 
 // Add a personal crypto wallet (address + chain). Balance syncs afterwards.
 export async function POST(req: Request) {
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     const w = await prisma.wallet.create({
       data: {
         scope: "personal",
-        chain: chain as "BTC" | "ETH" | "TRX" | "TON",
+        chain: chain as "BTC" | "ETH" | "BSC" | "TRX" | "TON",
         token: chain,
         address,
         label: (b.label || "").trim() || `${chain} ${address.slice(0, 6)}`,
