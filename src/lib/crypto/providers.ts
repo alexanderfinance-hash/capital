@@ -108,6 +108,9 @@ const ETH_RPCS = [
 const ETH_TOKENS: EvmToken[] = [
   { symbol: "USDT", contract: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
   { symbol: "USDC", contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
+  // WBTC — обёрнутый биткоин на Ethereum (8 знаков). Нужен, чтобы при обмене
+  // USDT→BTC прямо в этом кошельке позиция продолжала отслеживаться.
+  { symbol: "WBTC", contract: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8 },
 ];
 export const fetchEvm = makeEvmFetcher(ETH_RPCS, "ETH", ETH_TOKENS);
 
@@ -123,6 +126,8 @@ const BSC_RPCS = [
 const BSC_TOKENS: EvmToken[] = [
   { symbol: "USDT", contract: "0x55d398326f99059fF775485246999027B3197955", decimals: 18 },
   { symbol: "USDC", contract: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", decimals: 18 },
+  // BTCB — биткоин на BNB Smart Chain (18 знаков), аналог WBTC на ETH.
+  { symbol: "BTCB", contract: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", decimals: 18 },
 ];
 export const fetchBsc = makeEvmFetcher(BSC_RPCS, "BNB", BSC_TOKENS);
 
