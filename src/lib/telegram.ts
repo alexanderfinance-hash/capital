@@ -103,3 +103,32 @@ export function senderLabel(m: TgMessage): string {
   if (m.chat?.title) return m.chat.title;
   return "Telegram";
 }
+
+/** Allow-list of report senders (comma-separated in TELEGRAM_REPORT_SENDER),
+ *  lower-cased. Empty → no filter (any sender's report is processed). */
+export function reportSenderAllow(): string[] {
+  return (process.env.TELEGRAM_REPORT_SENDER || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** True when the message's sender is trusted to post the daily balances report.
+ *  Matches against the display label («внёс …»), @username, username, numeric
+ *  user id and sender-chat id/title — any one hit passes. With no allow-list
+ *  configured, everyone passes (backwards-compatible). */
+export function senderAllowed(m: TgMessage): boolean {
+  const allow = reportSenderAllow();
+  if (!allow.length) return true;
+  const ids: string[] = [senderLabel(m).toLowerCase()];
+  if (m.from) {
+    if (m.from.id != null) ids.push(String(m.from.id));
+    if (m.from.username) {
+      ids.push(m.from.username.toLowerCase());
+      ids.push(`@${m.from.username.toLowerCase()}`);
+    }
+  }
+  if (m.sender_chat?.id != null) ids.push(String(m.sender_chat.id));
+  if (m.sender_chat?.title) ids.push(m.sender_chat.title.toLowerCase());
+  return ids.some((x) => allow.includes(x));
+}
