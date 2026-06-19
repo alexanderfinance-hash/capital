@@ -104,22 +104,26 @@ export function senderLabel(m: TgMessage): string {
   return "Telegram";
 }
 
-/** Allow-list of report senders (comma-separated in TELEGRAM_REPORT_SENDER),
- *  lower-cased. Empty → no filter (any sender's report is processed). */
+/** Substrings of trusted report senders (comma-separated in
+ *  TELEGRAM_REPORT_SENDER), lower-cased. Defaults to ["arbi"] so the daily
+ *  report (posted by «Arbi | Assistant») is trusted out of the box without any
+ *  server config. Set "*" to disable the filter (process every sender). */
 export function reportSenderAllow(): string[] {
-  return (process.env.TELEGRAM_REPORT_SENDER || "")
+  const raw = (process.env.TELEGRAM_REPORT_SENDER || "").trim();
+  if (!raw) return ["arbi"]; // sensible default — report author contains "Arbi"
+  return raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 }
 
 /** True when the message's sender is trusted to post the daily balances report.
- *  Matches against the display label («внёс …»), @username, username, numeric
- *  user id and sender-chat id/title — any one hit passes. With no allow-list
- *  configured, everyone passes (backwards-compatible). */
+ *  A sender passes when any trusted substring occurs in its display label
+ *  («внёс …»), @username, username, numeric id or sender-chat id/title — so
+ *  e.g. "arbi" matches «Arbi | Assistant». "*" disables the filter. */
 export function senderAllowed(m: TgMessage): boolean {
   const allow = reportSenderAllow();
-  if (!allow.length) return true;
+  if (allow.includes("*")) return true;
   const ids: string[] = [senderLabel(m).toLowerCase()];
   if (m.from) {
     if (m.from.id != null) ids.push(String(m.from.id));
@@ -130,5 +134,5 @@ export function senderAllowed(m: TgMessage): boolean {
   }
   if (m.sender_chat?.id != null) ids.push(String(m.sender_chat.id));
   if (m.sender_chat?.title) ids.push(m.sender_chat.title.toLowerCase());
-  return ids.some((x) => allow.includes(x));
+  return ids.some((x) => allow.some((a) => x.includes(a)));
 }
