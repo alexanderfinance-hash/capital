@@ -11,7 +11,7 @@
  * in USD (the chat reports $). */
 import "server-only";
 import { prisma } from "../prisma";
-import { getUpdates, telegramChatId, senderLabel, webhookEnabled, type TgMessage, type TgUpdate } from "../telegram";
+import { getUpdates, telegramChatId, senderLabel, senderAllowed, webhookEnabled, type TgMessage, type TgUpdate } from "../telegram";
 import { parseReport, isReport, normName as norm } from "./telegram-parse";
 
 export interface ApplyResult {
@@ -118,6 +118,9 @@ export async function syncTelegramAgencies(): Promise<TelegramSyncResult> {
     const m = u.message || u.channel_post || u.edited_message || u.edited_channel_post;
     if (!m) continue;
     if (chatFilter && String(m.chat?.id) !== chatFilter) continue;
+    // Only trusted senders post the report — ignore other chat members'
+    // messages so casual chatter ($-mentions) can't create phantom agencies.
+    if (!senderAllowed(m)) continue;
     const text = m.text || m.caption || "";
     if (!text || !isReport(text)) continue;
     // Keep the most recent qualifying message (daily full snapshot).
@@ -147,6 +150,7 @@ export async function applyWebhookUpdate(update: unknown): Promise<(ApplyResult 
   if (!m) return null;
   const chatFilter = telegramChatId();
   if (chatFilter && String(m.chat?.id) !== chatFilter) return null;
+  if (!senderAllowed(m)) return null;
   const text = m.text || m.caption || "";
   if (!text || !isReport(text)) return null;
 
