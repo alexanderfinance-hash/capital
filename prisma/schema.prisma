@@ -233,13 +233,25 @@ model ExpenseWeekTransaction {
   @@index([weekEnd, parent, sub])
 }
 
-/// Monthly personal income (mostly dividends), imported from the ДДС Google
-/// Sheet ledger. Drives the income series on the расходы/доходы chart. Keyed by
-/// period "YYYY-MM"; value is in USD (the ledger is kept in USD).
+/// Monthly personal income, imported from the «Отчеты для Алекса» → «Отчет
+/// Общий» report (row «Всего чистая прибыль»). Drives the green income series on
+/// the расходы/доходы chart. Keyed by period "YYYY-MM"; value is in USD.
 model MonthlyIncome {
   period   String   @id // "2025-12"
   usd      Decimal  @db.Decimal(18, 2)
-  source   String   @default("dds") // "dds" (sheet) | "manual"
+  source   String   @default("profit") // "profit" (Отчет Общий) | "dds" | "manual"
+  syncedAt DateTime @default(now())
+}
+
+/// Weekly personal income (net profit, «Всего чистая прибыль»), from the same
+/// «Отчет Общий» report — its weekly columns (e.g. 01.06–07.06, Пн–Вс, matching
+/// the expense weeks). Drives the income series in the weekly расходы view.
+/// Keyed by weekEnd "YYYY-MM-DD"; value is in USD.
+model WeeklyIncome {
+  weekEnd  String   @id // "2026-06-07" (воскресенье недели)
+  label    String   // "01.06–07.06"
+  usd      Decimal  @db.Decimal(18, 2)
+  source   String   @default("profit")
   syncedAt DateTime @default(now())
 }
 
