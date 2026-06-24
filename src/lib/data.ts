@@ -73,7 +73,7 @@ export async function getPersonalData(): Promise<PersonalData> {
   try {
     // History charts show up to ~13 months back (covers the 1Y period + margin).
     const historyFrom = new Date(Date.now() - 400 * 86400000);
-    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync, incomeRows, investRows, weekRows, allWeekCats, allWeekSubs, allTxns, allWeekTxns] = await Promise.all([
+    const [assetRows, dividendRows, monthRows, coinRows, sync, allCats, allSubs, personalWalletRows, capitalSnaps, cryptoSnaps, tonnumPrice, tonnumSync, incomeRows, investRows, weekRows, allWeekCats, allWeekSubs, allTxns, allWeekTxns, weekIncomeRows] = await Promise.all([
       prisma.asset.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.dividend.findMany({ orderBy: { paidAt: "desc" } }),
       prisma.expenseMonth.findMany({ orderBy: { monthStart: "asc" } }),
@@ -93,6 +93,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       prisma.expenseWeekSubcategory.findMany({ orderBy: { value: "desc" } }),
       prisma.expenseTransaction.findMany({ orderBy: { date: "asc" } }),
       prisma.expenseWeekTransaction.findMany({ orderBy: { date: "asc" } }),
+      prisma.weeklyIncome.findMany(),
     ]);
 
     const toPoints = (rows: { capturedAt: Date; value: unknown }[]): SnapshotPoint[] =>
@@ -142,8 +143,13 @@ export async function getPersonalData(): Promise<PersonalData> {
     const latestPeriod = months.length ? months[months.length - 1].period : "";
     const expenseCats = expensesByPeriod[latestPeriod] || [];
 
+    // Weekly income (net profit «Всего чистая прибыль» from the Отчет Общий
+    // report) keyed by weekEnd, aligned to the expense weeks (both Пн–Вс).
+    const weekIncomeByEnd = new Map<string, number>();
+    for (const r of weekIncomeRows) weekIncomeByEnd.set(r.weekEnd, num(r.usd));
+
     // Weekly data
-    const expenseWeeks: ExpenseWeek[] = weekRows.map((w) => ({ w: w.label, v: num(w.value), weekEnd: w.weekEnd }));
+    const expenseWeeks: ExpenseWeek[] = weekRows.map((w) => ({ w: w.label, v: num(w.value), weekEnd: w.weekEnd, income: weekIncomeByEnd.get(w.weekEnd) ?? 0 }));
     const expenseWeeksByPeriod: Record<string, { name: string; value: number }[]> = {};
     for (const c of allWeekCats) {
       (expenseWeeksByPeriod[c.weekEnd] ||= []).push({ name: c.name, value: num(c.value) });

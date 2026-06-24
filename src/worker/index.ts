@@ -10,7 +10,10 @@ const EXPENSES_CRON = process.env.SYNC_EXPENSES_CRON || "0 * * * *"; // hourly
 const TELEGRAM_CRON = process.env.SYNC_TELEGRAM_CRON || "*/15 * * * *"; // every 15 min
 const COINLINK_CRON = process.env.SYNC_COINLINK_CRON || "*/30 * * * *"; // every 30 min
 const TONNUMS_CRON = process.env.SYNC_TONNUMS_CRON || "30 * * * *"; // hourly (TON-number rate)
-const DIVIDENDS_CRON = process.env.SYNC_DIVIDENDS_CRON || "15 * * * *"; // hourly (income from ДДС)
+// Income (net profit «Всего чистая прибыль» from the «Отчет Общий» report).
+// Replaces the old ДДС-dividends income sync. SYNC_DIVIDENDS_CRON kept as a
+// fallback alias so existing env files keep working.
+const PROFIT_CRON = process.env.SYNC_PROFIT_CRON || process.env.SYNC_DIVIDENDS_CRON || "15 * * * *"; // hourly
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -56,9 +59,9 @@ cron.schedule(EXPENSES_CRON, () => trigger("/api/sync/expenses"));
 cron.schedule(TELEGRAM_CRON, () => trigger("/api/sync/telegram"));
 cron.schedule(COINLINK_CRON, () => trigger("/api/sync/coinlink"));
 cron.schedule(TONNUMS_CRON, () => trigger("/api/sync/tonnums"));
-cron.schedule(DIVIDENDS_CRON, () => trigger("/api/sync/dividends"));
+cron.schedule(PROFIT_CRON, () => trigger("/api/sync/profit"));
 
-console.log(`worker started · crypto="${CRYPTO_CRON}" expenses="${EXPENSES_CRON}" telegram="${TELEGRAM_CRON}" coinlink="${COINLINK_CRON}" tonnums="${TONNUMS_CRON}" dividends="${DIVIDENDS_CRON}" app=${APP_URL}`);
+console.log(`worker started · crypto="${CRYPTO_CRON}" expenses="${EXPENSES_CRON}" telegram="${TELEGRAM_CRON}" coinlink="${COINLINK_CRON}" tonnums="${TONNUMS_CRON}" profit="${PROFIT_CRON}" app=${APP_URL}`);
 
 // Kick once on boot — but only after the app is actually reachable.
 (async () => {
@@ -68,5 +71,5 @@ console.log(`worker started · crypto="${CRYPTO_CRON}" expenses="${EXPENSES_CRON
   await trigger("/api/sync/telegram");
   await trigger("/api/sync/coinlink");
   await trigger("/api/sync/tonnums");
-  await trigger("/api/sync/dividends");
+  await trigger("/api/sync/profit");
 })();

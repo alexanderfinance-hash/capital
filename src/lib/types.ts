@@ -43,6 +43,7 @@ export interface ExpenseWeek {
   w: string;      // label "01.06–07.06"
   v: number;      // expenses USD
   weekEnd: string; // "YYYY-MM-DD"
+  income?: number; // net profit for the week (USD, from «Отчет Общий»)
 }
 
 /** Expense rows reclassified as investments (education etc.). Shown on

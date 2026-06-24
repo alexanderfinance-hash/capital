@@ -537,12 +537,14 @@ export default function Expenses() {
   const onStackSelect = (i: number) =>
     mode === "month" ? setSelIdx(i) : (setSelWeekIdx(i), setOpenWeekCat(null));
 
-  const expVal = sel?.v ?? 0;
-  const incVal = sel?.income ?? 0;
+  // Показатели «Доходы/Расходы/Разница» зависят от режима (месяц или неделя).
+  const expVal = (mode === "month" ? sel?.v : selWeek?.v) ?? 0;
+  const incVal = (mode === "month" ? sel?.income : selWeek?.income) ?? 0;
   const diffVal = incVal - expVal;
-  const hasIncome = months.some((m) => (m.income ?? 0) > 0);
+  const hasIncome =
+    months.some((m) => (m.income ?? 0) > 0) || weeks.some((w) => (w.income ?? 0) > 0);
 
-  const maxW = Math.max(1, ...weeks.map((w) => w.v));
+  const maxW = Math.max(1, ...weeks.map((w) => Math.max(w.v, show.income ? w.income ?? 0 : 0)));
 
   // Данные для прокручиваемой диаграммы по времени (верхний график).
   const monthBars: TimelineBar[] = useMemo(
@@ -560,7 +562,7 @@ export default function Expenses() {
       weeks.map((w) => ({
         label: w.w,
         expense: w.v,
-        income: 0,
+        income: w.income ?? 0,
         cats: (w.weekEnd && store.expenseWeeksByPeriod[w.weekEnd]) || [],
       })),
     [weeks, store.expenseWeeksByPeriod]
@@ -708,7 +710,7 @@ export default function Expenses() {
 
       {isEmpty ? (
         <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
-          Нет данных. Расходы подтянутся из Google Sheets, доходы — из ДДС (дивиденды) при синхронизации.
+          Нет данных. Расходы подтянутся из Google Sheets, доходы — из отчёта «Отчет Общий» (чистая прибыль) при синхронизации.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -742,7 +744,7 @@ export default function Expenses() {
                           <button
                             key={s.key}
                             onClick={() => toggle(s.key)}
-                            title={disabled ? "Доходы появятся после синхронизации ДДС" : undefined}
+                            title={disabled ? "Доходы появятся после синхронизации отчёта" : undefined}
                             style={{
                               display: "inline-flex", alignItems: "center", gap: 6,
                               padding: "5px 11px", borderRadius: 999,
@@ -781,22 +783,53 @@ export default function Expenses() {
                   {split
                     ? "Столбец расходов разбит на категории. Наведите курсор на столбец — увидите сумму за период; нажмите — категории справа."
                     : hasIncome
-                    ? "Зелёный — доходы (дивиденды из ДДС), красный — расходы. «По категориям» делит расход на сегменты; нажмите на месяц — категории справа."
-                    : "Нажмите на столбец месяца, чтобы посмотреть его категории. «По категориям» делит расход на сегменты. Доходы появятся после синхронизации ДДС."}
+                    ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы. «По категориям» делит расход на сегменты; нажмите на месяц — категории справа."
+                    : "Нажмите на столбец месяца, чтобы посмотреть его категории. «По категориям» делит расход на сегменты. Доходы появятся после синхронизации отчёта."}
                 </div>
               </>
             )}
 
             {mode === "week" && (
               <>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="k">Расходы за {selWeek?.w ?? "—"}</div>
-                    <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-.02em", marginTop: 6, lineHeight: 1, color: "var(--neg)" }}>
-                      <Money>{fmtV(selWeek?.v ?? 0)}</Money>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18, gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+                    {stats.map((s) => (
+                      <div key={s.key}>
+                        <div className="k">{s.label} за {selWeek?.w ?? "—"}</div>
+                        <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-.02em", marginTop: 6, lineHeight: 1, color: s.color }}>
+                          <Money>{s.signed ? fmtVSigned(s.value) : fmtV(s.value)}</Money>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                    <SplitToggle />
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {SERIES.map((s) => {
+                        const on = show[s.key];
+                        const disabled = s.key === "income" && !hasIncome;
+                        return (
+                          <button
+                            key={s.key}
+                            onClick={() => toggle(s.key)}
+                            title={disabled ? "Доходы появятся после синхронизации отчёта" : undefined}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                              padding: "5px 11px", borderRadius: 999,
+                              border: "1px solid var(--hair)",
+                              background: on ? "var(--hair-2)" : "transparent",
+                              cursor: "pointer", fontFamily: "var(--sans)", fontSize: 12,
+                              color: on ? "var(--ink)" : "var(--faint)",
+                              opacity: disabled ? 0.5 : 1,
+                            }}
+                          >
+                            <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, opacity: on ? 1 : 0.35 }} />
+                            {s.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                  <SplitToggle />
                 </div>
 
                 <TimelineChart
@@ -808,15 +841,17 @@ export default function Expenses() {
                   selIdx={wIdx}
                   onSelect={(i) => { setSelWeekIdx(i); setOpenWeekCat(null); setOpenWeekSub(null); }}
                   split={split}
-                  showIncome={false}
-                  showExpense={true}
-                  showDiff={false}
+                  showIncome={show.income}
+                  showExpense={show.expenses}
+                  showDiff={show.diff}
                   verticalLabels={true}
                   minSlot={46}
                 />
                 <div className="h-sub" style={{ marginTop: 12 }}>
                   {split
                     ? "Столбец расходов разбит на категории. Наведите курсор на столбец — увидите сумму за неделю; нажмите — категории справа."
+                    : hasIncome
+                    ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы. «По категориям» делит расход на сегменты; нажмите на неделю — категории справа."
                     : "Наведите курсор на столбец — увидите сумму за неделю; нажмите на неделю — категории справа. «По категориям» делит расход на сегменты."}
                 </div>
               </>
