@@ -48,7 +48,17 @@ git pull && ./deploy.sh                                                    # о�
 ## Прочие workflow
 
 - `configure-telegram.yml` — помощь в настройке Telegram-бота.
-- `configure-wireguard.yml` — настройка WireGuard (был фикс apt в нём).
+- `configure-wireguard.yml` — настройка ванильного WireGuard split-tunnel (устарел,
+  оставлен для справки).
+- `configure-amneziawg.yml` — **актуальный** способ поднять туннель к Telegram.
+  Провайдер выдаёт AmneziaWG-конфиг (параметры `Jc/Jmin/Jmax/S1/S2/H1–H4` — обход
+  DPI), которые ванильный `wg-quick` не парсит (`Line unrecognized: Jc=8`). Workflow
+  ставит `amneziawg` (PPA `amnezia/ppa`, awg-quick + модуль ядра DKMS), кладёт конфиг
+  из секрета `WG_CONFIG` в `/etc/amnezia/amneziawg/tgwg.conf` (split-tunnel только на
+  подсети Telegram), поднимает `tgwg` через `awg-quick` и возвращает бота на поллинг.
+  **Если туннель отвалился / балансы агентств замерли** — обнови `WG_CONFIG` свежим
+  рабочим конфигом и запусти этот workflow. Проверка в логах: `host → api.telegram.org`
+  должно быть `200/404/302` (не `000/fail`).
 
 ## Песочница vs прод (важно при отладке)
 
