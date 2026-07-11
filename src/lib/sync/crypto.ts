@@ -45,7 +45,7 @@ const COIN_META: Record<string, { name: string; icon: string }> = {
   ETH: { name: "Ethereum", icon: "coins" },
   BNB: { name: "BNB", icon: "coins" },
   TRX: { name: "Tron", icon: "coins" },
-  TON: { name: "Toncoin", icon: "coins" },
+  TON: { name: "Gram (Toncoin)", icon: "coins" },
   USDT: { name: "USDT", icon: "wallet" },
   USDC: { name: "USDC", icon: "wallet" },
   WBTC: { name: "WBTC (Bitcoin)", icon: "coins" },
