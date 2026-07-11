@@ -1,0 +1,40 @@
+name: Diagnose CMC GRAM
+
+# Разовая проверка: что CoinMarketCap отдаёт по тикерам GRAM и TON (из контейнера
+# app, с рабочим CMC_API_KEY) — имя/ранг/цена. Нужно, чтобы подтвердить, что
+# после ребренда Toncoin→Gram цена берётся по GRAM и это именно Toncoin/Gram.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  diagnose:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe CMC over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 3m
+          script: |
+            cd "$HOME/capital" || { echo "Нет каталога ~/capital"; exit 1; }
+            echo "=== CMC quotes/latest?symbol=GRAM,TON (из app) ==="
+            docker exec capital-app-1 node -e '
+              const key=process.env.CMC_API_KEY;
+              if(!key){console.log("CMC_API_KEY НЕ задан в app");process.exit(0);}
+              fetch("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=GRAM,TON&convert=USD",{headers:{"X-CMC_PRO_API_KEY":key}})
+                .then(r=>r.json())
+                .then(j=>{
+                  for(const s of ["GRAM","TON"]){
+                    const d=j&&j.data&&j.data[s];
+                    const arr=Array.isArray(d)?d:(d?[d]:[]);
+                    if(!arr.length){console.log(s+": (нет данных)");continue;}
+                    for(const c of arr){console.log(s+": id="+c.id+" name="+c.name+" rank="+c.cmc_rank+" price="+(c.quote&&c.quote.USD&&c.quote.USD.price));}
+                  }
+                  if(j&&j.status&&j.status.error_message)console.log("status:",j.status.error_message);
+                })
+                .catch(e=>console.log("ERR",String(e&&e.cause||e).slice(0,150)));
+            ' 2>&1 | cat
