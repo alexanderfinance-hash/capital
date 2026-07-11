@@ -226,17 +226,36 @@ export async function fetchTon(address: string): Promise<Holding[]> {
 }
 
 /* ---------- Prices (CoinMarketCap) ---------- */
+// Псевдонимы тикеров для CMC: внутренний/on-chain символ → тикер на CoinMarketCap.
+// Toncoin ребрендился в Gram (тикер TON → GRAM) 15.06.2026 — блокчейн, адреса и
+// балансы не менялись, но котировка на CMC теперь под GRAM. Расширяется через
+// CMC_SYMBOL_ALIASES="TON:GRAM,FOO:BAR".
+function cmcAliases(): Map<string, string> {
+  const m = new Map<string, string>([["TON", "GRAM"]]);
+  for (const pair of (process.env.CMC_SYMBOL_ALIASES || "").split(",")) {
+    const [from, to] = pair.split(":").map((s) => s.trim().toUpperCase());
+    if (from && to) m.set(from, to);
+  }
+  return m;
+}
+
 export async function getPrices(symbols: string[]): Promise<Map<string, Price>> {
   const out = new Map<string, Price>();
   const key = process.env.CMC_API_KEY;
   const list = [...new Set(symbols)].filter(Boolean);
   if (!key || !list.length) return out;
-  const url = `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=${list.join(",")}&convert=USD`;
+  // Запрашиваем цену по актуальному тикеру CMC, но раскладываем обратно на символ,
+  // которым пользуется остальное приложение (холдинги по-прежнему несут "TON").
+  const aliases = cmcAliases();
+  const cmcOf = new Map<string, string>(); // символ приложения → тикер CMC
+  for (const s of list) cmcOf.set(s, aliases.get(s.toUpperCase()) || s);
+  const cmcSymbols = [...new Set([...cmcOf.values()])];
+  const url = `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=${cmcSymbols.join(",")}&convert=USD`;
   const res = await fetch(url, { headers: { "X-CMC_PRO_API_KEY": key }, signal: signal() });
   if (!res.ok) throw new Error("CMC " + res.status);
   const j: any = await res.json();
   for (const s of list) {
-    const d = j?.data?.[s];
+    const d = j?.data?.[cmcOf.get(s) as string];
     const q = Array.isArray(d) ? d[0]?.quote?.USD : d?.quote?.USD;
     if (q) out.set(s, { usd: q.price, change24h: q.percent_change_24h ?? 0 });
   }
