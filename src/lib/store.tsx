@@ -373,8 +373,12 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     const salaryReserve = reserves.salaryWeekly * reserves.salaryWeeks;
     const agencyReserve = reserves.agencyReserve;
     const payableTotal = payable.total;
-    const total = walletsTotal + agenciesTotal;
-    const available = total - salaryReserve - reserves.tech - agencyReserve - payableTotal;
+    const total = walletsTotal + agenciesTotal; // все активы компании (общий баланс)
+    // Остатки на балансах рекламных агентств лежат внутри рекламных кабинетов и
+    // фактически НЕ выводимы, поэтому в «Доступно к выводу» не входят —
+    // исключаются целиком (не прибавляем agenciesTotal). agencyReserve сохранён
+    // как поле, но в расчёте доступного больше не участвует.
+    const available = walletsTotal - salaryReserve - reserves.tech - payableTotal;
     return { walletsTotal, agenciesTotal, salaryReserve, agencyReserve, payable: payableTotal, total, available };
   }, [agencies, reserves, walletsTotal, payable.total]);
 
