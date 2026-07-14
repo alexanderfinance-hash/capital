@@ -17,12 +17,14 @@ function Waterfall({ c, tech }: { c: CompanyComputed; tech: number }) {
   const rows = [
     { label: "Кошельки USDT", value: c.walletsTotal, kind: "add" as const },
     { label: "Рекламные агентства", value: c.agenciesTotal, kind: "add" as const },
+    // Остатки агентств лежат в рекламных кабинетах — фактически не выводимы,
+    // поэтому вычитаются из «доступно» целиком (в общий баланс входят как актив).
+    ...(c.agenciesTotal > 0 ? [{ label: "Остатки агентств (не выводимы)", value: -c.agenciesTotal, kind: "sub" as const }] : []),
     { label: "Резерв на зарплаты", value: -c.salaryReserve, kind: "sub" as const },
     { label: "Резерв на тех. расходы", value: -tech, kind: "sub" as const },
-    ...(c.agencyReserve > 0 ? [{ label: "Резерв на рекл. агентства", value: -c.agencyReserve, kind: "sub" as const }] : []),
     ...(c.payable > 0 ? [{ label: "Кредиторка CoinLink", value: -c.payable, kind: "sub" as const }] : []),
   ];
-  const scaleMax = Math.max(c.walletsTotal, c.agenciesTotal, c.salaryReserve, tech, c.agencyReserve, c.payable, c.available) || 1;
+  const scaleMax = Math.max(c.walletsTotal, c.agenciesTotal, c.salaryReserve, tech, c.payable, c.available) || 1;
   return (
     <>
       {rows.map((r, i) => (
@@ -266,24 +268,6 @@ function ReservesSliders({ c, compact }: { c: CompanyComputed; compact: boolean 
       <div style={compact ? undefined : { marginBottom: 16 }}>
         <Slider k="tech" name="Резерв на тех. расходы" fig={money(reserves.tech)} min={0} max={120000} step={2500} />
       </div>
-      <div style={compact ? undefined : { marginBottom: 16 }}>
-        <Slider
-          k="agencyReserve"
-          name="Резерв на рекламные агентства"
-          fig={money(reserves.agencyReserve)}
-          min={0}
-          max={120000}
-          step={1000}
-          note={
-            compact ? undefined : (
-              <>
-                остатки агентств <b className="mono">{money(c.agenciesTotal)}</b> + резерв ={" "}
-                <b className="mono">{money(c.agenciesTotal + reserves.agencyReserve)}</b>
-              </>
-            )
-          }
-        />
-      </div>
     </>
   );
   return compact ? <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 20 }}>{items}</div> : <>{items}</>;
@@ -299,7 +283,7 @@ function HeroPair({ c }: { c: CompanyComputed }) {
           {money(c.available)}
         </div>
         <div className="h-sub" style={{ marginTop: 6 }}>
-          после резервов{c.payable > 0 ? " и кредиторки CoinLink" : " на зарплаты и тех. расходы"}
+          без остатков агентств, после резервов{c.payable > 0 ? " и кредиторки CoinLink" : ""}
         </div>
       </div>
       <div style={{ padding: 24 }}>
@@ -618,6 +602,12 @@ function LayoutReport({ c, tech }: { c: CompanyComputed; tech: number }) {
           <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{money(c.walletsTotal)}</span> кошельки
           <span className="mono" style={{ color: "var(--pos)", fontWeight: 600 }}>+</span>
           <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{money(c.agenciesTotal)}</span> агентства
+          {c.agenciesTotal > 0 && (
+            <>
+              <span className="mono" style={{ color: "var(--neg)", fontWeight: 600 }}>−</span>
+              <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{money(c.agenciesTotal)}</span> агентства не выводимы
+            </>
+          )}
           <span className="mono" style={{ color: "var(--neg)", fontWeight: 600 }}>−</span>
           <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{money(c.salaryReserve)}</span> зарплаты
           <span className="mono" style={{ color: "var(--neg)", fontWeight: 600 }}>−</span>
