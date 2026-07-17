@@ -34,7 +34,7 @@ jobs:
           script_stop: true
           script: |
             set -e
-            cd "$HOME/capital" || { echo "Нет каталога ~/capital"; exit 1; }
+            cd /opt/capital || { echo "Нет каталога /opt/capital"; exit 1; }
             if [ -z "$TG_TOKEN" ]; then
               echo "Секрет TELEGRAM_BOT_TOKEN пуст — задайте его в Settings → Secrets → Actions"; exit 1;
             fi

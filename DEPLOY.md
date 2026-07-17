@@ -158,7 +158,9 @@ variables → Actions → New repository secret**:
 - Прогресс/логи деплоя видны во вкладке **Actions**.
 
 ### Предусловия на сервере
-- Репозиторий склонирован в `~/capital` (как в шаге 4 выше).
+- Репозиторий склонирован в `/opt/capital` (workflow заходят именно туда; путь
+  задан в `.github/workflows/*.yml`). Должен принадлежать пользователю из секрета
+  `VPS_USER` (текущий сервер: `sasha`), чтобы `git pull`/`deploy.sh` шли без sudo.
 - Сервер умеет делать `git pull` без ввода пароля. Если репозиторий приватный и
   клонирован по HTTPS — настройте сохранение токена
   (`git config --global credential.helper store` и один ручной `git pull`),

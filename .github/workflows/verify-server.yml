@@ -19,7 +19,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: false
           script: |
-            cd "$HOME/capital" || { echo "Нет каталога ~/capital"; exit 1; }
+            cd /opt/capital || { echo "Нет каталога /opt/capital"; exit 1; }
             echo "=== .env: факт наличия (без значений) ==="
             for k in TRONGRID_API_KEY CMC_API_KEY DOMAIN APP_PASSWORD AUTH_SECRET CRON_SECRET TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_WEBHOOK_SECRET COINLINK_DATABASE_URL; do
               v=$(grep -E "^${k}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)

@@ -34,7 +34,7 @@ jobs:
           script_stop: true
           script: |
             set -e
-            cd "$HOME/capital"
+            cd /opt/capital
             git fetch origin
             git checkout claude/dreamy-johnson-pUcCJ
             git pull --ff-only origin claude/dreamy-johnson-pUcCJ
