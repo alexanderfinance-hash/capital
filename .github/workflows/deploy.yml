@@ -34,7 +34,13 @@ jobs:
           script_stop: true
           script: |
             set -e
-            cd /opt/capital
+            # Ищем каталог репозитория по разным вариантам расположения, чтобы не
+            # зависеть от того, куда его склонировали на сервере.
+            cd /opt/capital 2>/dev/null \
+              || cd /root/capital 2>/dev/null \
+              || cd "$HOME/capital" 2>/dev/null \
+              || { echo "Каталог репозитория не найден (пробовал /opt/capital, /root/capital, ~/capital)"; exit 1; }
+            echo "Каталог выкладки: $(pwd)"
             git fetch origin
             git checkout claude/dreamy-johnson-pUcCJ
             git pull --ff-only origin claude/dreamy-johnson-pUcCJ
