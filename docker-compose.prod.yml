@@ -4,6 +4,11 @@ services:
   caddy:
     image: caddy:2.8
     restart: unless-stopped
+    # Явные DNS: иначе Caddy не резолвит acme-*.letsencrypt.org (stub 127.0.0.53
+    # изнутри контейнера недоступен) и не получает TLS-сертификат.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     depends_on:
       - app
     ports:
