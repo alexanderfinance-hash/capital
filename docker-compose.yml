@@ -20,6 +20,12 @@ services:
   app:
     build: .
     restart: unless-stopped
+    # Явные DNS-резолверы: на хосте resolv.conf указывает на stub 127.0.0.53,
+    # который недоступен изнутри контейнера (внешние синки/Let's Encrypt падали
+    # на "lookup ... on 127.0.0.53:53: connection refused").
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +80,9 @@ services:
   worker:
     build: .
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     depends_on:
       app:
         condition: service_started
