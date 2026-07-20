@@ -43,8 +43,7 @@ jobs:
             echo "=== telegram: строки синка в логах воркера ==="
             docker logs --tail 300 capital-worker-1 2>&1 | grep "/api/sync/telegram" | tail -3 || echo "нет строк telegram в логах"
             echo "=== telegram: пробный синк сейчас ==="
-            CRON=$(grep -E "^CRON_SECRET=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs)
-            curl -s -m 30 -X POST -H "x-cron-key: $CRON" http://127.0.0.1:3000/api/sync/telegram | head -c 800 || echo "telegram: запрос не выполнен"
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/telegram",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.text()).then(t=>console.log(t.slice(0,800))).catch(e=>console.log("telegram: запрос не выполнен",String(e&&e.cause||e).slice(0,80)))' 2>/dev/null || echo "telegram: запрос не выполнен"
             echo
             # Сетевая проба до Telegram ИЗ контейнера app (тот же путь, что у синка):
             # DNS + HTTP-код. Любой код (404/200) = связь есть; FAIL = недоступно.
@@ -65,7 +64,7 @@ jobs:
               echo "app: COINLINK_DATABASE_URL НЕ задан (или контейнер недоступен)"
             fi
             echo "=== coinlink: пробный синк сейчас ==="
-            curl -s -m 30 -X POST -H "x-cron-key: $CRON" http://127.0.0.1:3000/api/sync/coinlink | head -c 800 || echo "coinlink: запрос не выполнен"
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/coinlink",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.text()).then(t=>console.log(t.slice(0,800))).catch(e=>console.log("coinlink: запрос не выполнен",String(e&&e.cause||e).slice(0,80)))' 2>/dev/null || echo "coinlink: запрос не выполнен"
             echo
             echo "=== coinlink: состояние в БД ==="
             docker exec capital-db-1 psql -U capital -d capital -t -A -F' | ' -c "SELECT 'payable: '||\"totalUsdt\"||' usdt · обновлено '||COALESCE(to_char(\"lastSyncedAt\",'YYYY-MM-DD HH24:MI'),'—') FROM \"CoinlinkPayable\" WHERE id='default';" 2>/dev/null || echo "coinlink: недоступно"
