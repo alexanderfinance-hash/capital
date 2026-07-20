@@ -1,0 +1,31 @@
+name: Diagnose host caddy
+
+# Разовая диагностика: что за Caddy держит 80/443 на хосте, его конфиг (какие
+# домены и куда проксирует — ищем источник localhost:3001) и что на 3000.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  diagnose:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe host caddy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 3m
+          script: |
+            echo "=== systemctl status caddy ==="
+            sudo systemctl status caddy --no-pager 2>&1 | head -8 || echo "(нет службы caddy)"
+            echo "=== процесс, держащий 80/443 ==="
+            sudo ss -ltnp 2>/dev/null | grep -E ':80 |:443 ' || echo "(80/443 свободны)"
+            echo "=== /etc/caddy/Caddyfile ==="
+            sudo cat /etc/caddy/Caddyfile 2>/dev/null || echo "(нет /etc/caddy/Caddyfile)"
+            echo "=== что слушает 3000/3001 ==="
+            sudo ss -ltnp 2>/dev/null | grep -E ':3000 |:3001 ' || echo "(ничего)"
+            echo "=== процесс next-server (если есть) ==="
+            pgrep -af next-server 2>/dev/null | head -3 || echo "(нет next-server)"
