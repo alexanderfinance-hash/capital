@@ -1,0 +1,35 @@
+name: Diagnose net
+
+# Разовая диагностика сетевого выхода контейнеров: почему контейнеры не достают
+# интернет (network is unreachable). Только чтение, ничего не меняет.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  diagnose:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe net over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 4m
+          script: |
+            echo "=== net.ipv4.ip_forward (должно быть 1) ==="
+            sysctl net.ipv4.ip_forward 2>/dev/null || cat /proc/sys/net/ipv4/ip_forward
+            echo "=== /etc/docker/daemon.json ==="
+            sudo cat /etc/docker/daemon.json 2>/dev/null || echo "(нет daemon.json)"
+            echo "=== хост достаёт интернет? ==="
+            curl -sS -m 6 -o /dev/null -w "host→1.1.1.1: HTTP %{http_code}\n" https://1.1.1.1/ 2>&1 || echo "host: нет сети"
+            echo "=== свежий контейнер достаёт интернет? ==="
+            docker run --rm --dns 1.1.1.1 alpine sh -c 'wget -q -T 6 -O /dev/null https://1.1.1.1/ && echo "container→ OK" || echo "container→ FAIL (нет выхода)"' 2>&1 | tail -3
+            echo "=== ufw статус ==="
+            sudo ufw status verbose 2>/dev/null | head -8 || echo "(ufw нет/недоступен)"
+            echo "=== iptables FORWARD (политика/правила) ==="
+            sudo iptables -S FORWARD 2>/dev/null | head -12 || echo "(iptables недоступен)"
+            echo "=== iptables NAT POSTROUTING (masquerade) ==="
+            sudo iptables -t nat -S POSTROUTING 2>/dev/null | head -12 || echo "(nat недоступен)"
