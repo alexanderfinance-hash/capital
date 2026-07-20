@@ -21,14 +21,14 @@ jobs:
           command_timeout: 5m
           script: |
             cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
-            echo "=== app-контейнер → интернет? ==="
-            docker exec capital-app-1 node -e 'fetch("https://1.1.1.1/",{signal:AbortSignal.timeout(8000)}).then(r=>console.log("app→internet OK",r.status)).catch(e=>console.log("app→internet FAIL",String(e&&e.cause||e).slice(0,120)))' 2>&1 | tail -2
-            echo "=== caddy-контейнер → Let'"'"'s Encrypt? ==="
-            docker exec capital-caddy-1 sh -c 'wget -q -T 8 -O /dev/null https://acme-v02.api.letsencrypt.org/directory && echo "caddy→LE OK" || echo "caddy→LE FAIL"' 2>&1 | tail -2
-            echo "=== перезапуск caddy (форс повторной выдачи сертификата) ==="
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml restart caddy 2>&1 | tail -3 || docker restart capital-caddy-1
-            echo "=== ждём 30с, смотрим логи caddy ==="
-            sleep 30
-            docker logs --tail 20 capital-caddy-1 2>&1 | grep -iE 'certificate|obtain|acme|error|unreachable|ready|serving' | tail -15 || echo "(нет строк)"
-            echo "=== проверка сертификата на 443 (локально, через Caddy) ==="
-            curl -sS -m 10 -o /dev/null -w "HTTPS код: %{http_code}\n" --resolve alex-finance.pro:443:127.0.0.1 https://alex-finance.pro/ 2>&1 | tail -2 || echo "(нет ответа)"
+            echo "=== app-контейнер до интернета ==="
+            docker exec capital-app-1 node -e 'fetch("https://1.1.1.1/",{signal:AbortSignal.timeout(8000)}).then(r=>console.log("app internet OK",r.status)).catch(e=>console.log("app internet FAIL",String(e&&e.cause||e).slice(0,120)))' 2>&1 | tail -2
+            echo "=== caddy до acme letsencrypt ==="
+            docker exec capital-caddy-1 sh -c 'wget -q -T 8 -O /dev/null https://acme-v02.api.letsencrypt.org/directory && echo "caddy LE OK" || echo "caddy LE FAIL"' 2>&1 | tail -2
+            echo "=== restart caddy ==="
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml restart caddy 2>&1 | tail -3
+            echo "=== ждём 35с и смотрим логи caddy ==="
+            sleep 35
+            docker logs --tail 30 capital-caddy-1 2>&1 | grep -iE 'certificate obtained|obtaining|got renewal|acme|error|unreachable|serving initial|ready for handshake' | tail -18
+            echo "=== HTTPS локально через caddy ==="
+            curl -sS -m 10 -o /dev/null -w "HTTPS: %{http_code}\n" --resolve alex-finance.pro:443:127.0.0.1 https://alex-finance.pro/ 2>&1 | tail -2
