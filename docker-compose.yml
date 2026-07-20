@@ -66,9 +66,10 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/app/secrets/google-service-account.json}"
     volumes:
       - ./secrets:/app/secrets:ro
-    # Bound to localhost; public traffic goes through Caddy (docker-compose.prod.yml).
-    ports:
-      - "127.0.0.1:3000:3000"
+    # Порт на хост НЕ пробрасываем: публичный трафик идёт через Caddy
+    # (reverse_proxy app:3000 по docker-сети), а хостовый 127.0.0.1:3000 только
+    # конфликтует с посторонним процессом на сервере. Внутри сети app доступен как
+    # http://app:3000; для ручных вызовов — `docker exec capital-app-1 ...`.
 
   worker:
     build: .
