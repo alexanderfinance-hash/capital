@@ -15,6 +15,9 @@ RUN npm ci
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# next build прожорлив по памяти: на маленьком VPS (2 ГБ RAM) поднимаем лимит кучи
+# V8 (в паре со swap на хосте), иначе сборка падает с "JavaScript heap out of memory".
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx prisma generate && npm run build
 
 # ---- runtime ----
