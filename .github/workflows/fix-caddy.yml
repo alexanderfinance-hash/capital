@@ -1,8 +1,7 @@
 name: Fix caddy cert
 
-# Перезапускает docker-демон (пересоздаёт сети и iptables-NAT начисто — лечит
-# ситуацию, когда один контейнер не выходит в интернет при рабочих остальных),
-# поднимает стек и проверяет, получил ли Caddy TLS-сертификат.
+# Чистый down → up стека (демон docker уже с обновлёнными сетями), затем проверка
+# выхода caddy в интернет и выдачи TLS-сертификата.
 on:
   workflow_dispatch: {}
 
@@ -11,7 +10,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Restart docker and verify caddy over SSH
+      - name: Recreate stack and verify caddy over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -21,13 +20,16 @@ jobs:
           command_timeout: 8m
           script: |
             cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
-            echo "=== перезапуск docker-демона ==="
-            sudo systemctl restart docker
-            sleep 15
-            echo "=== поднимаем стек ==="
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d 2>&1 | tail -8
-            echo "=== ждём 40с ==="
-            sleep 40
+            echo "=== down ==="
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down 2>&1 | tail -6
+            echo "=== кто на 80/443 после down ==="
+            sudo ss -ltnp 2>/dev/null | grep -E ':80 |:443 ' || echo "(80/443 свободны)"
+            echo "=== up ==="
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d 2>&1 | tail -10
+            echo "=== ждём 45с ==="
+            sleep 45
+            echo "=== состояние контейнеров ==="
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps 2>&1 | tail -8
             echo "=== caddy до acme letsencrypt ==="
             docker exec capital-caddy-1 sh -c 'wget -q -T 8 -O /dev/null https://acme-v02.api.letsencrypt.org/directory && echo "caddy LE OK" || echo "caddy LE FAIL"' 2>&1 | tail -2
             echo "=== логи caddy по сертификату ==="
