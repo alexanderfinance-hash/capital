@@ -13,9 +13,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    # Bound to localhost only — DB is never exposed to the public internet.
-    ports:
-      - "127.0.0.1:5432:5432"
+    # Порт на хост НЕ пробрасываем: приложение ходит в БД по внутренней docker-сети
+    # (db:5432), а хостовый 127.0.0.1:5432 только конфликтует с другим Postgres на
+    # сервере. Для psql с хоста используйте `docker exec capital-db-1 psql ...`.
 
   app:
     build: .
