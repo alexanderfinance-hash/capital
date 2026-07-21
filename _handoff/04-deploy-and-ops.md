@@ -14,6 +14,26 @@
   `.github/**` и `*.md` деплой не запускают (`paths-ignore`).
 - Запуск вручную: **Actions → Deploy to VPS → Run workflow**.
 
+## Текущий сервер и режим (важно!)
+
+- **Сервер: `159.89.6.214`** (DigitalOcean, FRA1, hostname `ubuntu-s-2vcpu-2gb-fra1-01`).
+  Пользователь деплоя — **`sasha`** (секрет `VPS_USER`). Репозиторий — в **`/opt/capital`**.
+- Это **общий сервер на несколько проектов**: на нём хостовый **системный Caddy**
+  (`/etc/caddy/Caddyfile`, служба `caddy`), который держит 80/443 и проксирует
+  домены: `alex-finance.pro → 127.0.0.1:3001`, `finance-company.online → :3000`,
+  `tgsm.…nip.io → :8080`. Его конфиг и порты трогать нельзя.
+- Поэтому наш стек работает в режиме **«за внешним reverse-proxy»**
+  (`EXTERNAL_PROXY=true` в `.env`): свой Caddy НЕ поднимаем, отдаём приложение на
+  **`127.0.0.1:3001`** (`docker-compose.proxy.yml`), куда проксирует хостовый Caddy.
+- **БД — контейнерная** (`capital-db-1`, volume `pgdata`). При переезде реальные
+  данные были перенесены из старого хостового Postgres в контейнер (pg_dump →
+  pg_restore). `DATABASE_URL` в `.env` (localhost:5432) относится к СТАРОЙ хостовой
+  БД — приложение её НЕ использует (в контейнере DATABASE_URL=`db:5432`).
+- Мелочи на сервере, которые стоит выключить (наследие ручного переезда): старый
+  хостовый Postgres на 5432 и `capital-worker.service` — они больше не нужны.
+- **2 ГБ RAM** — при сборке `next build` нужен swap (есть) + лимит кучи
+  `NODE_OPTIONS=--max-old-space-size=4096` (задан в Dockerfile).
+
 ## Контейнеры (docker-compose)
 
 4 сервиса: `app` (Next.js), `db` (Postgres), `worker` (cron-синки), `caddy`
