@@ -1,0 +1,51 @@
+name: Migrate data host to container
+
+# Переносит реальную БД из хостового Postgres (её использовало ручное приложение)
+# в контейнерную БД (capital-db-1). После этого работает твой пароль и все данные.
+# Дамп → стоп app/worker → pg_restore --clean → старт (migrate deploy в entrypoint,
+# seed пропустится, т.к. User уже есть).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  migrate:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Migrate DB over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 12m
+          script: |
+            cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
+            DBURL=$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+            PGHOST=$(python3 -c "import urllib.parse as u;print(u.urlparse('$DBURL').hostname or '127.0.0.1')"); [ "$PGHOST" = localhost ] && PGHOST=127.0.0.1
+            PGPORT=$(python3 -c "import urllib.parse as u;print(u.urlparse('$DBURL').port or 5432)")
+            PGUSER=$(python3 -c "import urllib.parse as u;print(u.urlparse('$DBURL').username or 'capital')")
+            PGDB=$(python3 -c "import urllib.parse as u;print((u.urlparse('$DBURL').path or '/capital').lstrip('/').split('?')[0])")
+            PGPW=$(python3 -c "import urllib.parse as u;print(u.urlparse('$DBURL').password or '')")
+            echo "=== 1) дамп хостовой БД ($PGHOST:$PGPORT/$PGDB) ==="
+            docker run --rm --network host -v /tmp:/tmp -e PGPASSWORD="$PGPW" postgres:16 pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -Fc --no-owner --no-acl -f /tmp/capital_host.dump 2>&1 | tail -5
+            SZ=$(stat -c%s /tmp/capital_host.dump 2>/dev/null || echo 0)
+            echo "размер дампа: ${SZ} байт"
+            if [ "${SZ:-0}" -lt 1000 ]; then echo "✗ дамп пустой/маленький — прерываю, ничего не трогаю"; exit 1; fi
+            echo "=== 2) стоп app+worker (ненадолго) ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml stop app worker
+            echo "=== 3) восстановление в контейнерную БД (--clean --if-exists) ==="
+            docker cp /tmp/capital_host.dump capital-db-1:/tmp/capital_host.dump
+            docker exec capital-db-1 pg_restore -U capital -d capital --clean --if-exists --no-owner --no-acl /tmp/capital_host.dump 2>&1 | tail -12 || echo "(pg_restore с предупреждениями — норма для --clean)"
+            echo "=== 4) старт app+worker ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app worker
+            echo "=== 5) ждём 25с, проверяем контейнерную БД ==="
+            sleep 25
+            for t in User Asset Agency Wallet Dividend Reserve; do
+              c=$(docker exec capital-db-1 psql -U capital -d capital -tA -c "SELECT count(*) FROM \"$t\"" 2>/dev/null || echo "—")
+              echo "  контейнер $t = $c"
+            done
+            echo "=== health приложения ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/health").then(r=>r.text()).then(t=>console.log("health:",t.slice(0,140))).catch(e=>console.log("health FAIL",String(e&&e.cause||e).slice(0,80)))' 2>&1 | tail -2
+            rm -f /tmp/capital_host.dump; docker exec capital-db-1 rm -f /tmp/capital_host.dump 2>/dev/null || true
