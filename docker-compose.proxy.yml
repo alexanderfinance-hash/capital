@@ -1,0 +1,10 @@
+# Overlay: приложение за ВНЕШНИМ reverse-proxy (общий хостовый Caddy на сервере,
+# который обслуживает несколько доменов). Свой Caddy НЕ поднимаем — только
+# app + db + worker. Приложение отдаётся на 127.0.0.1:${PROXY_PORT:-3001}, куда
+# внешний Caddy проксирует alex-finance.pro.
+#
+# Включается флагом EXTERNAL_PROXY=true в .env (см. deploy.sh).
+services:
+  app:
+    ports:
+      - "127.0.0.1:${PROXY_PORT:-3001}:3000"
