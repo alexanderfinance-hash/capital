@@ -40,7 +40,15 @@ DOMAIN_VAL=$(grep '^DOMAIN=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 export SERVER_IP
 
-if [ -n "$DOMAIN_VAL" ]; then
+EXT_PROXY_VAL=$(grep '^EXTERNAL_PROXY=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs || true)
+PROXY_PORT_VAL=$(grep '^PROXY_PORT=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs || true)
+PROXY_PORT_VAL=${PROXY_PORT_VAL:-3001}
+
+if [ "$EXT_PROXY_VAL" = "true" ]; then
+  say "Режим: за внешним reverse-proxy (app на 127.0.0.1:${PROXY_PORT_VAL}), свой Caddy НЕ поднимаем."
+  OVERLAY="docker-compose.proxy.yml"
+  URL="http://127.0.0.1:${PROXY_PORT_VAL} (внешний Caddy → домен)"
+elif [ -n "$DOMAIN_VAL" ]; then
   say "Режим: домен $DOMAIN_VAL (Let's Encrypt, доверенный HTTPS)."
   OVERLAY="docker-compose.prod.yml"
   URL="https://$DOMAIN_VAL"
@@ -58,8 +66,8 @@ else
 fi
 
 # 5. Build & start
-say "Сборка и запуск (app + db + worker + caddy)..."
-docker compose -f docker-compose.yml -f "$OVERLAY" up -d --build
+say "Сборка и запуск..."
+docker compose -f docker-compose.yml -f "$OVERLAY" up -d --build --remove-orphans
 
 say "Готово. Контейнеры:"
 docker compose -f docker-compose.yml -f "$OVERLAY" ps
