@@ -52,6 +52,20 @@ const COIN_META: Record<string, { name: string; icon: string }> = {
   BTCB: { name: "BTCB (Bitcoin)", icon: "coins" },
 };
 
+// Обёрнутый биткоин (WBTC на Ethereum, BTCB на BSC) — тот же биткоин 1:1, поэтому
+// сводим к BTC, чтобы видеть общую сумму по биткоину одной строкой. Расширяется
+// через ENV: CRYPTO_MERGE_SYMBOLS="WBTC:BTC,BTCB:BTC,…".
+function symbolMergeMap(): Record<string, string> {
+  const m: Record<string, string> = { WBTC: "BTC", BTCB: "BTC" };
+  for (const pair of (process.env.CRYPTO_MERGE_SYMBOLS || "").split(",")) {
+    const [from, to] = pair.split(":").map((s) => s.trim().toUpperCase());
+    if (from && to) m[from] = to;
+  }
+  return m;
+}
+const SYMBOL_MERGE = symbolMergeMap();
+const mergeSymbol = (s: string) => SYMBOL_MERGE[s] || s;
+
 export interface CryptoSyncResult {
   coins: { symbol: string; amount: number; usd: number }[];
   totalUsd: number;
@@ -91,6 +105,9 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
         stale = true;
       }
     }
+    // Обёрнутый биткоин (WBTC на Ethereum, BTCB на BSC) — это тот же биткоин 1:1,
+    // сводим к BTC, чтобы везде видеть общую сумму по биткоину одной строкой.
+    holdings = holdings.map((h) => ({ ...h, symbol: mergeSymbol(h.symbol) }));
     fetched.push({ id: w.id, scope: w.scope, token: w.token, chain: w.chain, address: w.address, holdings, stale });
     for (const h of holdings) {
       allSymbols.add(h.symbol);
