@@ -67,7 +67,7 @@ export default function Investments() {
 
       <div className="card" style={{ padding: "8px 22px" }}>
         <div className="k" style={{ padding: "14px 0 4px" }}>
-          Холдинги
+          Криптовалюта
         </div>
         {cr.length === 0 && (
           <div className="h-sub" style={{ padding: "12px 0 18px" }}>
