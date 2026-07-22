@@ -4,12 +4,12 @@ import React from "react";
 import { Icon } from "./Icon";
 import { toggleTheme } from "@/lib/theme";
 
-export function Topbar({ title, sub, right }: { title: string; sub: string; right?: React.ReactNode }) {
+export function Topbar({ title, sub, right }: { title: string; sub?: string; right?: React.ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 22 }}>
       <div>
         <h1 className="h-title">{title}</h1>
-        <p className="h-sub">{sub}</p>
+        {sub ? <p className="h-sub">{sub}</p> : null}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>{right}</div>
     </div>

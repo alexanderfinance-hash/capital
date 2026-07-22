@@ -5,7 +5,7 @@ import { fmt, fmtK } from "./format";
 import type { Asset, HistoryPoint, SnapshotPoint } from "./types";
 
 /* ===== Real-history series (PRD §6) ===== */
-const PERIOD_DAYS: Record<string, number> = { "1Н": 7, "1М": 31, "6М": 184, "1Г": 366 };
+const PERIOD_DAYS: Record<string, number> = { "1Н": 7, "1М": 31, "3М": 92, "6М": 184, "1Г": 366 };
 
 export interface Series {
   vals: number[]; // in thousands (for LineChart)
@@ -472,49 +472,16 @@ export function CompanyChart({ history, current }: { history: HistoryPoint[]; cu
       </div>
     );
   }
-  const vals = history.map((h) => h.value);
-  // Last point reflects the live wallet USDT total (the rest are stored snapshots).
-  vals[vals.length - 1] = current;
-  const labels = history.map((h) => h.week);
-  const W = 720,
-    H = 240,
-    padL = 46,
-    padR = 14,
-    top = 22,
-    bot = 196;
-  const lo = Math.min(...vals),
-    hi = Math.max(...vals),
-    pad = (hi - lo || 1) * 0.18,
-    vlo = lo - pad,
-    vhi = hi + pad;
-  const X = (i: number) => padL + (i * (W - padL - padR)) / (vals.length - 1);
-  const Y = (v: number) => top + (1 - (v - vlo) / (vhi - vlo)) * (bot - top);
-  const pts = vals.map((v, i) => [+X(i).toFixed(1), +Y(v).toFixed(1)]);
-  const line = smooth(pts);
-  const area = line + ` L${pts[pts.length - 1][0]},${bot} L${pts[0][0]},${bot} Z`;
-  const gridEls: React.ReactNode[] = [];
-  for (let t = 0; t < 4; t++) {
-    const v = vhi - pad - (t * (vhi - vlo - 2 * pad)) / 3,
-      y = Y(v);
-    gridEls.push(<line key={`g${t}`} className="gridline" x1={padL} y1={+y.toFixed(1)} x2={W - padR} y2={+y.toFixed(1)} />);
-    gridEls.push(
-      <text key={`t${t}`} className="axis" x={0} y={+(y + 3).toFixed(1)}>
-        {fmtK(v)}
-      </text>
-    );
-  }
-  const xl: React.ReactNode[] = [];
-  labels.forEach((m, i) => {
-    if (i % 2 === 0 || i === labels.length - 1)
-      xl.push(
-        <text key={`x${i}`} className="axis" x={+X(i).toFixed(1)} y={bot + 24} textAnchor="middle">
-          {m}
-        </text>
-      );
-  });
-  const end = pts[pts.length - 1];
-  const delta = current - vals[0];
-  const pct = vals[0] ? +((delta / vals[0]) * 100).toFixed(1) : 0;
+  // Единый график, как на «Обзоре»: тот же LineChart (редкие подписи + ховер).
+  const raw = history.map((h) => h.value);
+  raw[raw.length - 1] = current; // последняя точка — живой итог кошельков
+  const n = raw.length;
+  const valsK = raw.map((v) => v / 1000);
+  const step = Math.max(1, Math.ceil(n / 6)); // ~6 подписей вместо сотни
+  const labels = history.map((h, i) => (i % step === 0 || i === n - 1 ? h.week : ""));
+  const tips = history.map((h, i) => ({ label: h.week, value: i === n - 1 ? current : h.value }));
+  const delta = current - raw[0];
+  const pct = raw[0] ? +((delta / raw[0]) * 100).toFixed(1) : 0;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
@@ -531,13 +498,7 @@ export function CompanyChart({ history, current }: { history: HistoryPoint[]; cu
           </span>
         </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
-        {gridEls}
-        <path d={area} fill="var(--pos-fill)" />
-        <path d={line} fill="none" stroke="var(--pos)" strokeWidth={2.2} />
-        <circle cx={end[0]} cy={end[1]} r={4.5} fill="var(--pos)" stroke="var(--surface)" strokeWidth={2} />
-        {xl}
-      </svg>
+      <LineChart vals={valsK} labels={labels} tip={tips} />
     </div>
   );
 }

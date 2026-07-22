@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useApp, type CompanyComputed, type CompanyLayout, type OpenGroups } from "@/lib/store";
+import { useApp, type CompanyComputed, type OpenGroups } from "@/lib/store";
 import { fmt } from "@/lib/format";
 import { Chip, CompanyChart } from "@/lib/chart";
 import { Icon } from "../Icon";
@@ -657,14 +657,8 @@ function ResetBtnLabel() {
 
 /* ---------- main ---------- */
 export default function Company() {
-  const { layout, setLayout, reserves, compute, companySynced, companySyncing, refreshCompany } = useApp();
+  const { reserves, compute, companySynced, companySyncing, refreshCompany } = useApp();
   const c = compute();
-
-  const Tab = ({ v, l }: { v: CompanyLayout; l: string }) => (
-    <button className={layout === v ? "on" : ""} onClick={() => setLayout(v)}>
-      {l}
-    </button>
-  );
 
   return (
     <>
@@ -672,11 +666,6 @@ export default function Company() {
         <div>
           <h1 className="h-title">Баланс компании</h1>
           <p className="h-sub">Финансовый учёт · USDT</p>
-        </div>
-        <div className="seg" style={{ flex: "none" }}>
-          <Tab v="dash" l="Дашборд" />
-          <Tab v="calc" l="Калькулятор" />
-          <Tab v="report" l="Отчёт" />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span className="badge sync">
@@ -689,9 +678,7 @@ export default function Company() {
         </div>
       </div>
 
-      {layout === "dash" && <LayoutDash c={c} tech={reserves.tech} />}
-      {layout === "calc" && <LayoutCalc c={c} tech={reserves.tech} />}
-      {layout === "report" && <LayoutReport c={c} tech={reserves.tech} />}
+      <LayoutDash c={c} tech={reserves.tech} />
     </>
   );
 }
