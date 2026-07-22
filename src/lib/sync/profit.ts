@@ -57,6 +57,20 @@ function scopeNet(pnl: PnlResponse): { periods: PnlPeriod[]; net: number[] } {
   return { periods, net: proj?.net || [] };
 }
 
+/** Платформа считает P&L «на лету» (updatedAt меняется на каждый запрос) и может
+ *  кратковременно вернуть некорректные значения (в момент пересчёта). Поэтому берём
+ *  ответ, только если scope-net СОВПАДАЕТ в двух последовательных запросах; иначе —
+ *  throw (PRD §7: оставляем последние известные значения, а не пишем глюк). */
+async function fetchPnlStable(mode: "month" | "week"): Promise<PnlResponse> {
+  const key = (r: PnlResponse) => JSON.stringify(scopeNet(r).net.map((v) => Math.round(Number(v) || 0)));
+  const a = await fetchPnl(mode);
+  const b = await fetchPnl(mode);
+  if (key(a) !== "[]" && key(a) === key(b)) return b;
+  const c = await fetchPnl(mode); // ещё одна попытка, если первые два разошлись
+  if (key(b) !== "[]" && key(b) === key(c)) return c;
+  throw new Error(`P&L API нестабилен по scope="${pnlScope()}" (${mode}) — значения расходятся между запросами`);
+}
+
 // Ключ недели у API — диапазон "DD.MM-DD.MM" без года. Конец диапазона (воскресенье)
 // переводим в weekEnd "YYYY-MM-DD". Год проставляем, идя от самой свежей недели
 // назад: если у более ранней недели месяц больше следующей — пересекли Новый год.
@@ -98,10 +112,10 @@ export interface ProfitSyncResult {
 export async function syncProfit(): Promise<ProfitSyncResult> {
   const scope = pnlScope();
   // Запрос ДО любой записи (PRD §7). Месяц обязателен; неделя — best-effort.
-  const monthPnl = await fetchPnl("month");
+  const monthPnl = await fetchPnlStable("month");
   let weekPnl: PnlResponse | null = null;
   try {
-    weekPnl = await fetchPnl("week");
+    weekPnl = await fetchPnlStable("week");
   } catch {
     weekPnl = null;
   }
