@@ -57,6 +57,29 @@ function scopeNet(pnl: PnlResponse): { periods: PnlPeriod[]; net: number[] } {
   return { periods, net: proj?.net || [] };
 }
 
+const sumArr = (a?: number[]) => (a || []).reduce((s, v) => s + (Number(v) || 0), 0);
+
+/** Санити-защита от глюка пересчёта. Платформа считает P&L «на лету» и изредка
+ *  (в момент пересчёта) отдаёт консолидированный net (scope="all") отрицательным,
+ *  хотя выручка стабильно положительна и в UI все месяцы «+». Здоровое состояние:
+ *  all за период уверенно > 0 (напр. +837K за 6 мес при выручке ~1.02M). Глюк:
+ *  all ≤ 0 при положительных revenue-разрезах — тогда throw (PRD §7: оставляем
+ *  последние известные значения, не пишем глюк). */
+function assertPnlSane(pnl: PnlResponse, mode: string): void {
+  const projects = pnl.projects || [];
+  const allTotal = sumArr(projects.find((p) => p.scope === pnlScope())?.net);
+  const posScopes = projects
+    .filter((p) => p.scope !== pnlScope())
+    .reduce((s, p) => s + Math.max(0, sumArr(p.net)), 0);
+  if (allTotal <= 0 && posScopes > 0) {
+    throw new Error(
+      `P&L glitch (${mode}): scope="${pnlScope()}" total=${Math.round(allTotal)} ≤ 0 при положительной выручке ${Math.round(
+        posScopes
+      )} — пропускаем синк, оставляем прошлые значения`
+    );
+  }
+}
+
 /** Платформа считает P&L «на лету» (updatedAt меняется на каждый запрос) и может
  *  кратковременно вернуть некорректные значения (в момент пересчёта). Поэтому берём
  *  ответ, только если scope-net СОВПАДАЕТ в двух последовательных запросах; иначе —
@@ -65,9 +88,15 @@ async function fetchPnlStable(mode: "month" | "week"): Promise<PnlResponse> {
   const key = (r: PnlResponse) => JSON.stringify(scopeNet(r).net.map((v) => Math.round(Number(v) || 0)));
   const a = await fetchPnl(mode);
   const b = await fetchPnl(mode);
-  if (key(a) !== "[]" && key(a) === key(b)) return b;
+  if (key(a) !== "[]" && key(a) === key(b)) {
+    assertPnlSane(b, mode);
+    return b;
+  }
   const c = await fetchPnl(mode); // ещё одна попытка, если первые два разошлись
-  if (key(b) !== "[]" && key(b) === key(c)) return c;
+  if (key(b) !== "[]" && key(b) === key(c)) {
+    assertPnlSane(c, mode);
+    return c;
+  }
   throw new Error(`P&L API нестабилен по scope="${pnlScope()}" (${mode}) — значения расходятся между запросами`);
 }
 
