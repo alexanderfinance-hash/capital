@@ -1,0 +1,33 @@
+name: Check pnl
+
+# Разовая проверка: суммарный net по каждому разрезу (включая all) за 6 мес +
+# updatedAt. Нужно понять сигнатуру бага «all»: отрицателен ли all при
+# положительных revenue-разрезах. Только чтение.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 3m
+          script: |
+            docker exec capital-app-1 node -e '
+              const t=process.env.PNL_API_TOKEN,u=process.env.PNL_API_URL||"https://finance-company.online/api/integrations/pnl";
+              const sum=a=>(a||[]).reduce((s,v)=>s+(Number(v)||0),0);
+              fetch(u+"?mode=month&periods=6",{headers:{Authorization:"Bearer "+t}}).then(r=>r.json()).then(j=>{
+                console.log("updatedAt",j.updatedAt);
+                let compPos=0;
+                (j.projects||[]).forEach(p=>{const tot=Math.round(sum(p.net));console.log("  scope",p.scope,"6мес total",tot,"hidden",!!p.hidden);if(p.scope!=="all"&&tot>0)compPos+=tot;});
+                const all=(j.projects||[]).find(p=>p.scope==="all");
+                console.log("=> all total",Math.round(sum(all&&all.net)),"| сумма положительных разрезов",compPos);
+              }).catch(e=>console.log("ERR",String(e&&e.cause||e).slice(0,150)));
+            ' 2>&1 | tail -20
