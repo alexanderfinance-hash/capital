@@ -1,0 +1,31 @@
+name: Check liability
+
+# Разовая проверка: как записаны задолженности в БД и корректен ли чистый итог
+# (активы − долги). Только чтение.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 3m
+          script: |
+            echo "=== есть ли колонка liability? ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -c "SELECT column_name FROM information_schema.columns WHERE table_name='Asset' AND column_name='liability';" 2>&1
+            echo "=== строки-задолженности (name | value | liability) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT name, value, liability FROM \"Asset\" WHERE liability = true;" 2>&1
+            echo "=== последние 5 активов (name | value | liability) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT name, value, liability FROM \"Asset\" ORDER BY \"createdAt\" DESC LIMIT 5;" 2>&1
+            echo "=== чистый итог (активы − долги) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -c "SELECT SUM(CASE WHEN liability THEN -value ELSE value END) FROM \"Asset\";" 2>&1
+            echo "=== сумма без учёта знака (как было бы БЕЗ фикса) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -c "SELECT SUM(value) FROM \"Asset\";" 2>&1
