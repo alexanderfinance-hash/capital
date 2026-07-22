@@ -1,7 +1,8 @@
 name: Check tron
 
-# Разовая проверка: сырой ответ TronGrid по личным TRON-адресам — где лежит TRX
-# (ликвидный balance vs замороженный frozenV2/frozen/energy/delegated/unfrozen).
+# Сверка балансов личных TRON-адресов: индексатор /v1/accounts (его использует
+# провайдер) vs «наземный» узел /wallet/getaccount (истинное состояние). Если
+# расходятся — виноват устаревший индексатор, и провайдер надо переключить.
 on:
   workflow_dispatch: {}
 
@@ -20,16 +21,18 @@ jobs:
           command_timeout: 4m
           script: |
             ADDRS=$(docker exec capital-db-1 psql -U capital -d capital -tA -c "SELECT address FROM \"Wallet\" WHERE scope='personal' AND chain='TRX';" 2>/dev/null | tr '\n' ' ')
-            echo "personal TRON addresses: $ADDRS"
+            echo "addresses: $ADDRS"
             docker exec -e ADDRS="$ADDRS" capital-app-1 node -e '
               const addrs=(process.env.ADDRS||"").trim().split(/\s+/).filter(Boolean);
-              const key=process.env.TRONGRID_API_KEY;
+              const key=process.env.TRONGRID_API_KEY;const H=key?{"TRON-PRO-API-KEY":key}:{};
+              const s=v=>(Number(v||0)/1e6).toFixed(2);
               (async()=>{for(const a of addrs){try{
-                const r=await fetch("https://api.trongrid.io/v1/accounts/"+a,{headers:key?{"TRON-PRO-API-KEY":key}:{}});
-                const j=await r.json();const d=(j.data&&j.data[0])||{};const ar=d.account_resource||{};
-                const s=v=>(Number(v||0)/1e6).toFixed(2);
-                const fv2=(d.frozenV2||[]).reduce((x,f)=>x+Number(f.amount||0),0);
-                const f1=(d.frozen||[]).reduce((x,f)=>x+Number(f.frozen_balance||0),0);
-                console.log(a,"| liquid",s(d.balance),"| frozenV2",s(fv2),"| frozen1.0",s(f1),"| energyFrozen",s(ar.frozen_balance_for_energy&&ar.frozen_balance_for_energy.frozen_balance),"| delegBW",s(d.delegated_frozenV2_balance_for_bandwidth),"| delegEN",s(ar.delegated_frozenV2_balance_for_energy),"| unfrozenV2",s((d.unfrozenV2||[]).reduce((x,u)=>x+Number(u.unfreeze_amount||0),0)));
-              }catch(e){console.log(a,"ERR",String(e&&e.cause||e).slice(0,100));}}})();
-            ' 2>&1 | tail -10
+                const r1=await (await fetch("https://api.trongrid.io/v1/accounts/"+a,{headers:H})).json();
+                const d1=(r1.data&&r1.data[0])||{};
+                const r2=await (await fetch("https://api.trongrid.io/wallet/getaccount",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({address:a,visible:true})})).json();
+                const fv2=(o)=>(o.frozenV2||[]).reduce((x,f)=>x+Number(f.amount||0),0);
+                console.log(a);
+                console.log("  /v1/accounts:  liquid",s(d1.balance),"frozenV2",s(fv2(d1)));
+                console.log("  /wallet/getaccount: liquid",s(r2.balance),"frozenV2",s(fv2(r2)),"| raw keys:",Object.keys(r2).join(","));
+              }catch(e){console.log(a,"ERR",String(e&&e.cause||e).slice(0,120));}}})();
+            ' 2>&1 | tail -14
