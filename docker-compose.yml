@@ -67,6 +67,11 @@ services:
       COINLINK_TOTAL_FN: "${COINLINK_TOTAL_FN:-coinlink_payable_total}"
       COINLINK_BY_PARTNER_FN: "${COINLINK_BY_PARTNER_FN:-coinlink_payable_by_partner}"
       COINLINK_PERIOD_FROM: "${COINLINK_PERIOD_FROM:-}"
+      # Чистая прибыль («Доходы») из P&L-API финансовой платформы компании.
+      PNL_API_URL: "${PNL_API_URL:-https://finance-company.online/api/integrations/pnl}"
+      PNL_API_TOKEN: "${PNL_API_TOKEN:-}"
+      PNL_SCOPE: "${PNL_SCOPE:-all}"
+      PNL_PERIODS: "${PNL_PERIODS:-12}"
       CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
       # Service-account key is mounted (below) rather than baked into the image.
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/app/secrets/google-service-account.json}"
