@@ -379,9 +379,12 @@ export function CategoryDonut({
 
 /* Capital-composition donut — mirrors renderDonut(). */
 export function Donut({ assets }: { assets: Asset[] }) {
-  // Пончик показывает только активы; задолженности (liability) в состав не входят.
+  // Кольцо — состав активов; задолженности (liability) отдельной строкой вычета,
+  // центр показывает ИТОГО с учётом долгов (как «Общий капитал» в заголовке).
   const shown = assets.filter((a) => !a.liability);
   const T = shown.reduce((s, a) => s + a.value, 0);
+  const liab = assets.reduce((s, a) => s + (a.liability ? a.value : 0), 0);
+  const net = T - liab;
   const B: Record<string, number> = { crypto: 0, vehicles: 0, cash: 0, other: 0 };
   shown.forEach((a) => (B[a.bucket] = (B[a.bucket] || 0) + a.value));
   const segs = [
@@ -418,7 +421,7 @@ export function Donut({ assets }: { assets: Asset[] }) {
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <span className="mono" style={{ fontSize: 19, fontWeight: 500 }}>
-            {fmtK(T)}
+            {fmtK(net)}
           </span>
           <span className="k" style={{ fontSize: 9 }}>
             итого
@@ -438,6 +441,16 @@ export function Donut({ assets }: { assets: Asset[] }) {
             </span>
           </div>
         ))}
+        {liab > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 0", borderBottom: "1px solid var(--hair-2)" }}>
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--neg)", flex: "none" }} />
+            <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)" }}>Задолженности</span>
+            <span className="mono" style={{ fontSize: 12, color: "var(--muted)", width: 34 }} />
+            <span className="mono" style={{ fontSize: 12.5, fontWeight: 500, color: "var(--neg)" }}>
+              −{fmt(liab)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import type { Asset } from "@/lib/types";
 export function CatCard({ a }: { a: Asset }) {
   const isTon = a.symbol === "TONNUM";
   const isRub = a.currency === "RUB" && a.nativeValue != null;
+  const isLia = !!a.liability;
   return (
     <div className="card cat">
       <div className="row1">
@@ -18,9 +19,12 @@ export function CatCard({ a }: { a: Asset }) {
         <Badge src={a.src} />
       </div>
       <div className="lab">{a.name}</div>
-      <div className="val">{fmt(a.value)}</div>
+      <div className="val" style={isLia ? { color: "var(--neg)" } : undefined}>
+        {isLia ? "−" : ""}
+        {fmt(a.value)}
+      </div>
       <div className="row2">
-        <Chip d={a.delta} />
+        {!isLia && <Chip d={a.delta} />}
         {isRub ? (
           <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>
             {fmtRub(a.nativeValue as number)}

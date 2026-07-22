@@ -6,7 +6,7 @@ import { PERIODS } from "@/lib/mockData";
 import { fmt } from "@/lib/format";
 import { LineChart, Chip, Donut, ChartEmpty, seriesForPeriod } from "@/lib/chart";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg } from "../ui";
-import { CatCard, FlowCard, AddAssetCard } from "../cards";
+import { CatCard, AddAssetCard } from "../cards";
 import { AddAssetModal } from "../AddAssetModal";
 
 export default function Overview() {
@@ -62,14 +62,6 @@ export default function Overview() {
         {store.assets.map((a) => (
           <CatCard key={a.id} a={a} />
         ))}
-        <FlowCard
-          icon="spend"
-          lab="Расходы"
-          cap="поток за месяц"
-          val={fmt(store.flows.expenses.value)}
-          right={<Chip d={store.flows.expenses.delta} goodOverride />}
-          src="sheets"
-        />
         <AddAssetCard onClick={() => setModal(true)} />
       </div>
 
