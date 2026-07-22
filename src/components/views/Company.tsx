@@ -7,7 +7,8 @@ import { Chip, CompanyChart } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { AddWalletModal } from "../AddWalletModal";
 import { AddAgencyModal } from "../AddAgencyModal";
-import { SyncStamp } from "../ui";
+import { SyncStamp, PeriodSeg } from "../ui";
+import { PERIODS } from "@/lib/mockData";
 import type { Agency, Reserves, Wallet } from "@/lib/types";
 
 const money = fmt;
@@ -361,11 +362,20 @@ function KpiStrip({ c }: { c: CompanyComputed }) {
   );
 }
 
+const CHART_DAYS: Record<string, number> = { "1Н": 7, "1М": 31, "3М": 92, "6М": 184, "1Г": 366 };
+
 function ChartCard({ c }: { c: CompanyComputed }) {
   const { history } = useApp();
+  const [period, setPeriod] = useState("6М");
+  // История без временных меток — окно периода берём срезом последних N точек
+  // (снимки ~ежедневные; если данных меньше — показываем всё, что есть).
+  const windowed = history.slice(-(CHART_DAYS[period] ?? 184));
   return (
     <div className="card" style={{ padding: 24 }}>
-      <CompanyChart history={history} current={c.walletsTotal} />
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <PeriodSeg periods={PERIODS} active={period} onChange={setPeriod} />
+      </div>
+      <CompanyChart history={windowed} current={c.walletsTotal} />
     </div>
   );
 }
