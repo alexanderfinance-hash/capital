@@ -81,6 +81,9 @@ model Asset {
   /// Show this asset on the Инвестиции tab (in "Другие инвестиции"). Crypto and
   /// TON numbers default to true; other manual assets default to false.
   investment  Boolean  @default(false)
+  /// Долг/задолженность: хранится с положительным `value`, но ВЫЧИТАЕТСЯ из личного
+  /// капитала (и исключается из пончика «Состав капитала»).
+  liability   Boolean  @default(false)
   source    DataSource
   bucket    AssetBucket
   createdAt DateTime    @default(now())

@@ -136,7 +136,8 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reserveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const personalTotal = useMemo(() => store.assets.reduce((s, a) => s + a.value, 0), [store.assets]);
+  // Личный капитал: активы плюсуются, задолженности (liability) вычитаются.
+  const personalTotal = useMemo(() => store.assets.reduce((s, a) => s + (a.liability ? -a.value : a.value), 0), [store.assets]);
 
   const toast = useCallback((msg: string) => {
     setToastMsg(msg);
