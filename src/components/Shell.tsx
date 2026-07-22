@@ -92,7 +92,7 @@ export function Shell(_props: { children?: React.ReactNode }) {
       onClick={() => go(n.href)}
       title={collapsed ? n.label : undefined}
       className={`nav-item${section === n.href ? " active" : ""}`}
-      style={{ width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--sans)", textAlign: "left", justifyContent: collapsed ? "center" : undefined }}
+      style={{ width: "100%", textAlign: "left", justifyContent: collapsed ? "center" : undefined }}
     >
       <Icon name={n.icon} />
       {!collapsed && <span>{n.label}</span>}

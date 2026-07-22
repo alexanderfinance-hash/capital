@@ -71,7 +71,7 @@ button,input,select,textarea{color:inherit;}
 .card.flat{background:var(--surface-2);}
 
 /* nav */
-.nav-item{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:8px;font-size:13.5px;font-weight:500;color:var(--ink-2);cursor:pointer;}
+.nav-item{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:8px;font-size:13.5px;font-weight:500;color:var(--ink-2);cursor:pointer;background:transparent;border:none;font-family:inherit;}
 .nav-item svg{width:17px;height:17px;stroke:currentColor;opacity:.8;}
 .nav-item.active{background:var(--ink);color:var(--surface);}
 .nav-item.active svg{opacity:1;}
