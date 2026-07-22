@@ -313,7 +313,7 @@ function KpiStrip({ c }: { c: CompanyComputed }) {
       </div>
     </div>
   );
-  const cols = 4 + (c.agencyReserve > 0 ? 1 : 0) + (c.payable > 0 ? 1 : 0);
+  const cols = 4 + (c.agenciesTotal > 0 ? 1 : 0) + (c.payable > 0 ? 1 : 0);
   return (
     <div className="grid-4col" style={{ display: "grid", gridTemplateColumns: `repeat(${cols},1fr)`, gap: 16 }}>
       <Kpi label="Кошельки USDT" value={c.walletsTotal} sub={wallets.length + " кошельков"} />
@@ -336,14 +336,14 @@ function KpiStrip({ c }: { c: CompanyComputed }) {
           ежемесячно
         </div>
       </div>
-      {c.agencyReserve > 0 && (
+      {c.agenciesTotal > 0 && (
         <div className="card cat flat" style={{ gap: 8 }}>
           <div className="lab">Резерв на агентства</div>
           <div className="val" style={{ color: "var(--muted)" }}>
-            {money(c.agencyReserve)}
+            {money(c.agenciesTotal)}
           </div>
           <div className="k" style={{ fontSize: 9.5 }}>
-            остатки + резерв = {money(c.agenciesTotal + c.agencyReserve)}
+            весь остаток удержан из «доступно»
           </div>
         </div>
       )}
