@@ -379,9 +379,11 @@ export function CategoryDonut({
 
 /* Capital-composition donut — mirrors renderDonut(). */
 export function Donut({ assets }: { assets: Asset[] }) {
-  const T = assets.reduce((s, a) => s + a.value, 0);
+  // Пончик показывает только активы; задолженности (liability) в состав не входят.
+  const shown = assets.filter((a) => !a.liability);
+  const T = shown.reduce((s, a) => s + a.value, 0);
   const B: Record<string, number> = { crypto: 0, vehicles: 0, cash: 0, other: 0 };
-  assets.forEach((a) => (B[a.bucket] = (B[a.bucket] || 0) + a.value));
+  shown.forEach((a) => (B[a.bucket] = (B[a.bucket] || 0) + a.value));
   const segs = [
     { k: "Крипта", v: B.crypto, c: "var(--pos)" },
     { k: "Автомобили", v: B.vehicles, c: "var(--donut-2)" },

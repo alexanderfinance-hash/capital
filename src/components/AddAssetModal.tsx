@@ -13,6 +13,7 @@ interface CatDef {
   bucket: AssetBucket;
   src: DataSource;
   tonNumber?: boolean; // quantity-driven, auto-priced from nums888.io
+  liability?: boolean; // долг: вычитается из личного капитала
 }
 
 const CATS: CatDef[] = [
@@ -23,6 +24,7 @@ const CATS: CatDef[] = [
   { label: "TON номера", icon: "phone", bucket: "other", src: "manual", tonNumber: true },
   { label: "Криптокошелёк", icon: "wallet", bucket: "crypto", src: "sync" },
   { label: "Прочий актив", icon: "box", bucket: "other", src: "manual" },
+  { label: "Задолженность", icon: "receipt", bucket: "other", src: "manual", liability: true },
 ];
 
 export function AddAssetModal({ onClose }: { onClose: () => void }) {
@@ -50,7 +52,8 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
   // Currency choice applies to value-based manual assets (cash / car / valuables / other).
   const showCurrency = !c.tonNumber && c.src === "manual";
   // Manual value assets can be flagged as investments (TON numbers always are).
-  const showInvest = !c.tonNumber && c.src === "manual";
+  // Задолженности инвестициями быть не могут.
+  const showInvest = !c.tonNumber && !c.liability && c.src === "manual";
   const isRub = showCurrency && cur === "RUB";
   const parsed = parseFloat((val || "").replace(/[^\d.]/g, "")) || 0;
   const previewUsd = isRub && usdRub > 0 ? Math.round(parsed / usdRub) : 0;
@@ -72,17 +75,18 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
       return;
     }
     const finalName = name.trim() || c.label;
+    const isLia = !!c.liability;
     if (isRub) {
       // Store the original RUB amount; value is shown in USD at the current CBR rate.
       const usd = usdRub > 0 ? Math.round(n / usdRub) : n;
-      addAsset({ icon: c.icon, name: finalName, value: usd, delta: null, currency: "RUB", nativeValue: n, src: c.src, bucket: c.bucket, investment: invest });
+      addAsset({ icon: c.icon, name: finalName, value: usd, delta: null, currency: "RUB", nativeValue: n, src: c.src, bucket: c.bucket, investment: isLia ? false : invest, liability: isLia });
       onClose();
-      toast(`Добавлено: ${finalName} · ${fmtRub(n)} ≈ ${fmt(usd)}`);
+      toast(`${isLia ? "Задолженность" : "Добавлено"}: ${finalName} · ${isLia ? "−" : ""}${fmtRub(n)} ≈ ${isLia ? "−" : ""}${fmt(usd)}`);
       return;
     }
-    addAsset({ icon: c.icon, name: finalName, value: n, delta: c.src === "sync" ? 0 : null, currency: "USD", src: c.src, bucket: c.bucket, investment: invest });
+    addAsset({ icon: c.icon, name: finalName, value: n, delta: c.src === "sync" ? 0 : null, currency: "USD", src: c.src, bucket: c.bucket, investment: isLia ? false : invest, liability: isLia });
     onClose();
-    toast(`Добавлено: ${finalName} · ${fmt(n)}`);
+    toast(`${isLia ? "Задолженность" : "Добавлено"}: ${finalName} · ${isLia ? "−" : ""}${fmt(n)}`);
   };
 
   return (

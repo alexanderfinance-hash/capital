@@ -178,7 +178,8 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     // раз: переписываем сегодняшнюю последним значением (и подчищаем дубли,
     // накопившиеся до перехода на ежедневные снимки), чтобы линия была гладкой.
     const allAssets = await tx.asset.findMany();
-    const personalTotal = allAssets.reduce((s, a) => s + Number(a.value), 0);
+    // Задолженности (liability) вычитаются из личного капитала.
+    const personalTotal = allAssets.reduce((s, a) => s + (a.liability ? -Number(a.value) : Number(a.value)), 0);
     await writeDailySnapshot(tx, "personal", personalTotal);
 
     // crypto-portfolio snapshot (Investments chart — PRD §6: третий ряд снимков)

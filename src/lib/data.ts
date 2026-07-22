@@ -118,6 +118,7 @@ export async function getPersonalData(): Promise<PersonalData> {
         currency,
         nativeValue,
         investment: a.investment ?? false,
+        liability: a.liability ?? false,
         src: a.source as DataSource,
         bucket: a.bucket as AssetBucket,
       };

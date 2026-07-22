@@ -16,6 +16,7 @@ export interface Asset {
   currency?: string; // "USD" | "RUB" — currency the value was entered in
   nativeValue?: number | null; // original amount in `currency` (when not USD)
   investment?: boolean; // tracked on the Инвестиции tab ("Другие инвестиции")
+  liability?: boolean; // долг: вычитается из личного капитала (не входит в пончик)
   src: DataSource;
   bucket: AssetBucket;
 }

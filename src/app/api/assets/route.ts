@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string; currency?: string; nativeValue?: number; investment?: boolean } = {};
+  let b: { icon?: string; name?: string; value?: number; delta?: number | null; src?: string; bucket?: string; amount?: number; symbol?: string; currency?: string; nativeValue?: number; investment?: boolean; liability?: boolean } = {};
   try {
     b = await req.json();
   } catch {
@@ -62,6 +62,7 @@ export async function POST(req: Request) {
         currency,
         nativeValue,
         investment,
+        liability: b.liability === true,
         source: (b.src as "sync" | "sheets" | "manual") || "manual",
         bucket: (b.bucket as "crypto" | "vehicles" | "cash" | "other") || "other",
       },

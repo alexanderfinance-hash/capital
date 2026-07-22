@@ -13,8 +13,9 @@ import type { Asset } from "@/lib/types";
 const GROUP_DEFS: { key: string; name: string; icon: string; match: (a: Asset) => boolean }[] = [
   { key: "crypto", name: "Крипта", icon: "coins", match: (a) => a.bucket === "crypto" && a.symbol !== "TONNUM" },
   { key: "tonnum", name: "TON номера", icon: "phone", match: (a) => a.symbol === "TONNUM" },
-  { key: "vehicles", name: "Машины", icon: "car", match: (a) => a.bucket === "vehicles" },
-  { key: "cash", name: "Наличные", icon: "cash", match: (a) => a.bucket === "cash" },
+  { key: "vehicles", name: "Машины", icon: "car", match: (a) => a.bucket === "vehicles" && !a.liability },
+  { key: "cash", name: "Наличные", icon: "cash", match: (a) => a.bucket === "cash" && !a.liability },
+  { key: "liabilities", name: "Задолженности", icon: "receipt", match: (a) => !!a.liability },
 ];
 
 const pluralAssets = (n: number) => {
@@ -97,6 +98,7 @@ export default function Assets() {
           {visibleGroups.map((g) => {
             const isOpen = !!openGroups[g.key];
             const total = g.items.reduce((s, a) => s + a.value, 0);
+            const isLia = g.key === "liabilities";
             return (
               <div key={g.key}>
                 <div
@@ -119,12 +121,14 @@ export default function Assets() {
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div className="mono" style={{ fontSize: 15, fontWeight: 600 }}>
-                      {fmt(total)}
+                    <div className="mono" style={{ fontSize: 15, fontWeight: 600, color: isLia ? "var(--neg)" : undefined }}>
+                      {isLia ? "−" : ""}{fmt(total)}
                     </div>
-                    <div style={{ marginTop: 2 }}>
-                      <Chip d={groupDelta(g.items)} />
-                    </div>
+                    {!isLia && (
+                      <div style={{ marginTop: 2 }}>
+                        <Chip d={groupDelta(g.items)} />
+                      </div>
+                    )}
                   </div>
                 </div>
                 {isOpen &&
@@ -136,8 +140,9 @@ export default function Assets() {
             // Everything the user added is removable; only sync-managed coins
             // (crypto bucket with a ticker) are protected.
             const removable = !(a.bucket === "crypto" && !!a.symbol);
-            // Manual assets can be marked as investments (crypto already is).
-            const canFlag = a.bucket !== "crypto";
+            const isLia = !!a.liability;
+            // Manual assets can be marked as investments (crypto already is; долги — нет).
+            const canFlag = a.bucket !== "crypto" && !isLia;
             const inInvest = !!a.investment;
             return (
               <div className="mlist-row" key={a.id} style={{ paddingLeft: 24 }}>
@@ -194,12 +199,14 @@ export default function Assets() {
                   </div>
                 ) : (
                   <div style={{ textAlign: "right" }}>
-                    <div className="mono" style={{ fontSize: 15, fontWeight: 500 }}>
-                      {fmt(a.value)}
+                    <div className="mono" style={{ fontSize: 15, fontWeight: 500, color: isLia ? "var(--neg)" : undefined }}>
+                      {isLia ? "−" : ""}{fmt(a.value)}
                     </div>
-                    <div style={{ marginTop: 2 }}>
-                      <Chip d={a.delta} />
-                    </div>
+                    {!isLia && (
+                      <div style={{ marginTop: 2 }}>
+                        <Chip d={a.delta} />
+                      </div>
+                    )}
                   </div>
                 )}
                 {canFlag ? (
