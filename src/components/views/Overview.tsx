@@ -19,7 +19,6 @@ export default function Overview() {
     <>
       <Topbar
         title="Обзор"
-        sub="Среда, 5 июня 2025"
         right={
           <>
             <ThemeButton />
