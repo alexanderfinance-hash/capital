@@ -1,0 +1,45 @@
+name: Apply PNL token
+
+# Вписывает PNL_API_TOKEN из GitHub-секрета в /opt/capital/.env, пересоздаёт
+# app+worker (подхватить env), показывает сырой ответ P&L-API (форматы month/week)
+# и прогоняет пробный синк «Доходов». Токен в логах маскируется GitHub Actions.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  apply:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inject token, recreate, sync over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          PNL_TOKEN: ${{ secrets.PNL_API_TOKEN }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: PNL_TOKEN
+          script_stop: false
+          command_timeout: 8m
+          script: |
+            cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
+            if [ -z "$PNL_TOKEN" ]; then echo "✗ секрет PNL_API_TOKEN пуст — добавьте его в GitHub → Settings → Secrets → Actions"; exit 1; fi
+            echo "=== вписываю PNL_API_TOKEN в .env ==="
+            if grep -q '^PNL_API_TOKEN=' .env; then
+              sed -i "s|^PNL_API_TOKEN=.*|PNL_API_TOKEN=\"$PNL_TOKEN\"|" .env
+            else
+              printf 'PNL_API_TOKEN="%s"\n' "$PNL_TOKEN" >> .env
+            fi
+            echo "PNL_API_TOKEN в .env: $(grep -q '^PNL_API_TOKEN=' .env && echo да || echo нет)"
+            echo "=== пересоздаю app+worker (подхватить env) ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app worker 2>&1 | tail -6
+            sleep 10
+            echo "=== сырой ответ P&L (month): currency + ключи periods + scope=all net ==="
+            docker exec capital-app-1 node -e 'const t=process.env.PNL_API_TOKEN,u=process.env.PNL_API_URL||"https://finance-company.online/api/integrations/pnl";fetch(u+"?mode=month&periods=6",{headers:{Authorization:"Bearer "+t}}).then(r=>r.text().then(x=>{let j;try{j=JSON.parse(x)}catch(e){return console.log("HTTP",r.status,x.slice(0,200))}console.log("currency",j.currency,"| periods",JSON.stringify((j.periods||[]).map(p=>p.key)));const a=(j.projects||[]).find(p=>p.scope==="all");console.log("scope=all net",JSON.stringify(a&&a.net));})).catch(e=>console.log("ERR",String(e&&e.cause||e).slice(0,160)))' 2>&1 | tail -4
+            echo "=== сырой ответ P&L (week): ключи periods ==="
+            docker exec capital-app-1 node -e 'const t=process.env.PNL_API_TOKEN,u=process.env.PNL_API_URL||"https://finance-company.online/api/integrations/pnl";fetch(u+"?mode=week&periods=4",{headers:{Authorization:"Bearer "+t}}).then(r=>r.json()).then(j=>console.log("week periods",JSON.stringify((j.periods||[]).map(p=>({k:p.key,l:p.label}))))).catch(e=>console.log("ERR",String(e&&e.cause||e).slice(0,160)))' 2>&1 | tail -3
+            echo "=== пробный синк «Доходов» ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/profit",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log("sync:",JSON.stringify({ok:j.ok,currency:j.currency,scope:j.scope,months:(j.months||[]).length,weeks:(j.weeks||[]).length,last3:(j.months||[]).slice(-3),err:j.error}).slice(0,700))).catch(e=>console.log("ERR",String(e&&e.cause||e).slice(0,160)))' 2>&1 | tail -3
+            echo "=== MonthlyIncome в БД ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd FROM \"MonthlyIncome\" ORDER BY period DESC LIMIT 8;" 2>&1 | head -10
