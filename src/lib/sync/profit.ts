@@ -57,6 +57,36 @@ function scopeNet(pnl: PnlResponse): { periods: PnlPeriod[]; net: number[] } {
   return { periods, net: proj?.net || [] };
 }
 
+// Ключ недели у API — диапазон "DD.MM-DD.MM" без года. Конец диапазона (воскресенье)
+// переводим в weekEnd "YYYY-MM-DD". Год проставляем, идя от самой свежей недели
+// назад: если у более ранней недели месяц больше следующей — пересекли Новый год.
+const WEEK_RE = /^\s*(\d{1,2})\.(\d{1,2})\s*[-–—]\s*(\d{1,2})\.(\d{1,2})\s*$/;
+function weekEndsFor(periods: PnlPeriod[]): (string | null)[] {
+  const now = new Date();
+  const nowY = now.getUTCFullYear();
+  const nowM = now.getUTCMonth() + 1;
+  const parsed = periods.map((p) => {
+    const m = (p.key || "").match(WEEK_RE);
+    return m ? { d2: Number(m[3]), mo2: Number(m[4]) } : null;
+  });
+  const out: (string | null)[] = new Array(periods.length).fill(null);
+  const idxs = parsed.map((x, i) => (x ? i : -1)).filter((i) => i >= 0);
+  if (!idxs.length) return out;
+  const lastIdx = idxs[idxs.length - 1];
+  // Год самой свежей недели: если её конечный месяц заметно больше текущего — прошлый год.
+  let year = parsed[lastIdx]!.mo2 > nowM + 1 ? nowY - 1 : nowY;
+  let prevMo = parsed[lastIdx]!.mo2;
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  for (let i = lastIdx; i >= 0; i--) {
+    const x = parsed[i];
+    if (!x) continue;
+    if (x.mo2 > prevMo) year -= 1;
+    prevMo = x.mo2;
+    out[i] = `${year}-${p2(x.mo2)}-${p2(x.d2)}`;
+  }
+  return out;
+}
+
 export interface ProfitSyncResult {
   source: string;
   currency: string;
@@ -87,9 +117,10 @@ export async function syncProfit(): Promise<ProfitSyncResult> {
   let weeksRaw: { weekEnd: string; label: string; native: number }[] = [];
   if (weekPnl) {
     const w = scopeNet(weekPnl);
+    const ends = weekEndsFor(w.periods); // "DD.MM-DD.MM" → weekEnd "YYYY-MM-DD" (вс)
     weeksRaw = w.periods
-      .map((p, i) => ({ weekEnd: p.key, label: p.label || p.key, native: Number(w.net[i] ?? 0) }))
-      .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.weekEnd));
+      .map((p, i) => ({ weekEnd: ends[i], label: p.label || p.key, native: Number(w.net[i] ?? 0) }))
+      .filter((x): x is { weekEnd: string; label: string; native: number } => !!x.weekEnd);
   }
 
   // Валюта: обычно USD (без пересчёта). RUB → делим на курс ЦБ на дату периода.
