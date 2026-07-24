@@ -36,6 +36,7 @@ interface PnlResponse {
   updatedAt?: string;
   currency?: string;
   mode?: string;
+  complete?: boolean; // платформа считает P&L «на лету»; false = пересчёт не завершён
   periods?: PnlPeriod[];
   projects?: PnlProject[];
 }
@@ -47,7 +48,15 @@ async function fetchPnl(mode: "month" | "week"): Promise<PnlResponse> {
   const url = `${base}?mode=${mode}&periods=${pnlPeriods()}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`PNL ${mode} HTTP ${res.status}`);
-  return (await res.json()) as PnlResponse;
+  const json = (await res.json()) as PnlResponse;
+  // Главный признак надёжности: пока пересчёт не завершён, платформа отдаёт
+  // complete=false с некорректными числами (именно так дашборд однажды получил
+  // мусор вместо «Чистой прибыли»). Не завершено — throw ДО записи (PRD §7:
+  // остаются последние известные значения, cron повторит позже).
+  if (json.complete === false) {
+    throw new Error(`PNL ${mode}: пересчёт платформы не завершён (complete=false) — пропускаем синк`);
+  }
+  return json;
 }
 
 /** net[] проекта scope="all" (или PNL_SCOPE), выровненный по periods[]. */
