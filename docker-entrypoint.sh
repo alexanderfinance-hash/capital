@@ -18,5 +18,9 @@ fi
 echo "→ Importing company wallets (idempotent)..."
 npx tsx prisma/import-company-wallets.ts || echo "company wallet import skipped/failed"
 
+# Idempotent: ensure the restricted "expenses" account exists (from EXPENSES_PASSWORD).
+echo "→ Ensuring expenses-only account (idempotent)..."
+npx tsx prisma/ensure-expenses-user.ts || echo "expenses user ensure skipped/failed"
+
 echo "→ Starting app..."
 exec "$@"

@@ -1,0 +1,49 @@
+name: Apply expenses account
+
+# Вписывает EXPENSES_PASSWORD (и опц. EXPENSES_EMAIL) из GitHub-секретов в
+# /opt/capital/.env, пересоздаёт app (подхватить env → docker-entrypoint создаст/
+# обновит ограниченный аккаунт «расходы») и подтверждает наличие пользователя.
+# Пароль в логах маскируется GitHub Actions.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  apply:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inject credentials, recreate, ensure user over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          EXP_PASSWORD: ${{ secrets.EXPENSES_PASSWORD }}
+          EXP_EMAIL: ${{ secrets.EXPENSES_EMAIL }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: EXP_PASSWORD,EXP_EMAIL
+          script_stop: false
+          command_timeout: 8m
+          script: |
+            cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
+            if [ -z "$EXP_PASSWORD" ]; then echo "✗ секрет EXPENSES_PASSWORD пуст — добавьте его в GitHub → Settings → Secrets → Actions"; exit 1; fi
+            EMAIL_VAL="${EXP_EMAIL:-expenses@capital.local}"
+            echo "=== вписываю EXPENSES_* в .env ==="
+            if grep -q '^EXPENSES_PASSWORD=' .env; then
+              sed -i "s|^EXPENSES_PASSWORD=.*|EXPENSES_PASSWORD=\"$EXP_PASSWORD\"|" .env
+            else
+              printf 'EXPENSES_PASSWORD="%s"\n' "$EXP_PASSWORD" >> .env
+            fi
+            if grep -q '^EXPENSES_EMAIL=' .env; then
+              sed -i "s|^EXPENSES_EMAIL=.*|EXPENSES_EMAIL=\"$EMAIL_VAL\"|" .env
+            else
+              printf 'EXPENSES_EMAIL="%s"\n' "$EMAIL_VAL" >> .env
+            fi
+            echo "EXPENSES_PASSWORD в .env: $(grep -q '^EXPENSES_PASSWORD=' .env && echo да || echo нет) | email: $EMAIL_VAL"
+            echo "=== пересоздаю app (entrypoint создаст/обновит аккаунт «расходы») ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app 2>&1 | tail -6
+            sleep 12
+            echo "=== идемпотентно создаю/обновляю аккаунт (на случай, если entrypoint уже прошёл) ==="
+            docker exec capital-app-1 npx tsx prisma/ensure-expenses-user.ts 2>&1 | tail -3
+            echo "=== пользователи в БД ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT email, role FROM \"User\" ORDER BY \"createdAt\";" 2>&1 | head -10

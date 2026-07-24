@@ -8,6 +8,7 @@ import { relativeRu, daysAgoRu, dayMonthRu } from "./time";
 import { getCurrentUsdRub, fallbackRate } from "./fx";
 import { SUPPLEMENTAL_WEEKLY_INCOME, SUPPLEMENTAL_MONTHLY_INCOME } from "./supplementalIncome";
 import type {
+  InitialData,
   PersonalData,
   CompanyData,
   Asset,
@@ -308,4 +309,41 @@ export async function getCompanyData(): Promise<CompanyData> {
 export async function getInitialData() {
   const [personal, company] = await Promise.all([getPersonalData(), getCompanyData()]);
   return { personal, company };
+}
+
+/* Урезанный payload для ограниченного аккаунта «расходы»: оставляем ТОЛЬКО данные
+ * личных расходов (месяцы/недели/категории/платежи), доходы вырезаем (income→0), а
+ * все прочие разделы (активы, крипта, дивиденды, инвестиции, история капитала,
+ * компания) обнуляем. Данные других разделов вообще не уходят такому клиенту —
+ * это и защита, и «без всего остального» из требования. Форма (InitialData)
+ * сохраняется, чтобы AppProvider работал без изменений. */
+export function redactToExpensesOnly(d: InitialData): InitialData {
+  return {
+    personal: {
+      ...d.personal,
+      // Расходы — как есть, но доход по месяцам/неделям вырезаем.
+      expenseMonths: d.personal.expenseMonths.map((m) => ({ ...m, income: 0 })),
+      expenseWeeks: d.personal.expenseWeeks.map((w) => ({ ...w, income: 0 })),
+      // Прочее личное — пусто.
+      assets: [],
+      coins: [],
+      cryptoWallets: [],
+      personalWallets: [],
+      dividendsList: [],
+      otherInvestments: { total: 0, items: [] },
+      capitalHistory: [],
+      cryptoHistory: [],
+      flows: { expenses: { ...d.personal.flows.expenses }, dividends: { value: 0 } },
+      tonNumberRate: { usd: 0, synced: "", staleDays: -1 },
+      // usdRub оставляем (нужен для переключателя $/₽ в расходах).
+    },
+    company: {
+      wallets: [],
+      agencies: [],
+      reserves: { salaryWeekly: 0, salaryWeeks: 0, tech: 0, agencyReserve: 0 },
+      payable: { total: 0, partners: [], synced: "", staleDays: -1 },
+      history: [],
+      synced: "",
+    },
+  };
 }

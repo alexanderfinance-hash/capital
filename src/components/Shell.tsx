@@ -42,20 +42,24 @@ function sectionForPath(p: string): string {
 
 // Контент раздела Shell рендерит сам (клиентски), поэтому серверные страницы-обёртки
 // (children) не используются — переходы между разделами мгновенные, без round-trip.
-export function Shell(_props: { children?: React.ReactNode }) {
+export function Shell({ restricted = false }: { restricted?: boolean; children?: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { personalSynced } = useApp();
+  // Ограниченный аккаунт «расходы»: в меню только «Расходы», раздел всегда /expenses.
+  const personalNav = restricted ? PERSONAL.filter((n) => n.href === "/expenses") : PERSONAL;
+  const mobileNav = restricted ? personalNav : MOBILE;
   // Переключение разделов — КЛИЕНТСКОЕ (мгновенно, без серверного round-trip):
   // держим текущий раздел в состоянии, URL обновляем через history.pushState.
-  const [section, setSection] = useState(() => sectionForPath(pathname));
+  const [section, setSection] = useState(() => (restricted ? "/expenses" : sectionForPath(pathname)));
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
+    if (restricted) return;
     const onPop = () => setSection(sectionForPath(window.location.pathname));
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [restricted]);
   useEffect(() => {
     try {
       setCollapsed(localStorage.getItem("sidebarCollapsed") === "1");
@@ -100,6 +104,7 @@ export function Shell(_props: { children?: React.ReactNode }) {
   );
 
   const View = VIEWS[section] || Overview;
+  const brandSub = restricted ? "личные расходы" : "личный баланс";
 
   return (
     <div className="app-shell ds">
@@ -115,7 +120,7 @@ export function Shell(_props: { children?: React.ReactNode }) {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: ".02em" }}>КАПИТАЛ</div>
                 <div className="k" style={{ fontSize: 9 }}>
-                  личный баланс
+                  {brandSub}
                 </div>
               </div>
             )}
@@ -132,27 +137,31 @@ export function Shell(_props: { children?: React.ReactNode }) {
         </button>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {!collapsed && (
+          {!collapsed && !restricted && (
             <div className="k" style={{ padding: "2px 12px 6px", fontSize: 9 }}>
               Личное
             </div>
           )}
-          {PERSONAL.map((n) => (
+          {personalNav.map((n) => (
             <NavItem key={n.href} n={n} />
           ))}
-          {!collapsed && (
-            <div className="k" style={{ padding: "14px 12px 6px", fontSize: 9 }}>
-              Компания
-            </div>
+          {!restricted && (
+            <>
+              {!collapsed && (
+                <div className="k" style={{ padding: "14px 12px 6px", fontSize: 9 }}>
+                  Компания
+                </div>
+              )}
+              {collapsed && <div style={{ height: 10 }} />}
+              {COMPANY.map((n) => (
+                <NavItem key={n.href} n={n} />
+              ))}
+            </>
           )}
-          {collapsed && <div style={{ height: 10 }} />}
-          {COMPANY.map((n) => (
-            <NavItem key={n.href} n={n} />
-          ))}
         </div>
 
         <div style={{ marginTop: "auto" }}>
-          {!collapsed && (
+          {!collapsed && !restricted && (
             <div className="card flat" style={{ padding: 13 }}>
               <div className="k" style={{ marginBottom: 10 }}>
                 Источники
@@ -183,12 +192,12 @@ export function Shell(_props: { children?: React.ReactNode }) {
 
       <main className="app-main">
         <div className="scroll">
-          <View />
+          {restricted ? <Expenses expensesOnly /> : <View />}
         </div>
       </main>
 
       <nav className="mobile-tabbar">
-        {MOBILE.map((n) => (
+        {mobileNav.map((n) => (
           <button key={n.href} onClick={() => go(n.href)} className={section === n.href ? "on" : ""} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "var(--sans)" }}>
             <Icon name={n.icon} />
             <span>{n.label}</span>

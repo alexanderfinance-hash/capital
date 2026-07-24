@@ -26,12 +26,19 @@ export async function authorizeSync(req: Request): Promise<boolean> {
  *  (data is still mock at this stage). Production always requires the DB. */
 export async function authenticate(password: string, email?: string) {
   try {
-    const user = email
-      ? await prisma.user.findUnique({ where: { email } })
-      : await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
-    if (!user) return null;
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    return ok ? user : null;
+    if (email) {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user) return null;
+      return (await bcrypt.compare(password, user.passwordHash)) ? user : null;
+    }
+    // Логин без email (форма спрашивает только пароль): сверяем пароль со ВСЕМИ
+    // пользователями и возвращаем совпавшего. Так один экран входа обслуживает и
+    // владельца (admin), и ограниченный аккаунт «расходы» — у каждого свой пароль.
+    const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
+    for (const user of users) {
+      if (await bcrypt.compare(password, user.passwordHash)) return user;
+    }
+    return null;
   } catch (err) {
     if (process.env.NODE_ENV !== "production" && process.env.APP_PASSWORD) {
       if (password === process.env.APP_PASSWORD) {
