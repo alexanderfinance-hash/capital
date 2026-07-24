@@ -452,7 +452,7 @@ function TimelineChart({
   );
 }
 
-export default function Expenses() {
+export default function Expenses({ expensesOnly = false }: { expensesOnly?: boolean }) {
   const { store, usdRub, refreshExpenses, expensesSyncing } = useApp();
   const months = store.expenseMonths;
   const weeks = store.expenseWeeks;
@@ -469,6 +469,9 @@ export default function Expenses() {
   const [openWeekSub, setOpenWeekSub] = useState<string | null>(null);
   const [split, setSplit] = useState(false);
   const toggle = (k: SeriesKey) => setShow((p) => ({ ...p, [k]: !p[k] }));
+  // Ограниченный аккаунт «расходы»: доходы/разница скрыты полностью (и данных о
+  // доходах в payload у него нет — см. redactToExpensesOnly).
+  const effShow: Record<SeriesKey, boolean> = expensesOnly ? { income: false, expenses: true, diff: false } : show;
 
   const conv = (v: number) => currency === "RUB" ? v * usdRub : v;
   const fmtV = (v: number) => currency === "RUB" ? fmtRub(conv(v)) : fmt(v);
@@ -542,9 +545,9 @@ export default function Expenses() {
   const incVal = (mode === "month" ? sel?.income : selWeek?.income) ?? 0;
   const diffVal = incVal - expVal;
   const hasIncome =
-    months.some((m) => (m.income ?? 0) > 0) || weeks.some((w) => (w.income ?? 0) > 0);
+    !expensesOnly && (months.some((m) => (m.income ?? 0) > 0) || weeks.some((w) => (w.income ?? 0) > 0));
 
-  const maxW = Math.max(1, ...weeks.map((w) => Math.max(w.v, show.income ? w.income ?? 0 : 0)));
+  const maxW = Math.max(1, ...weeks.map((w) => Math.max(w.v, effShow.income ? w.income ?? 0 : 0)));
 
   // Данные для прокручиваемой диаграммы по времени (верхний график).
   const monthBars: TimelineBar[] = useMemo(
@@ -569,7 +572,7 @@ export default function Expenses() {
   );
   const monthChartMax = Math.max(
     1,
-    ...months.map((m) => Math.max(show.expenses ? m.v : 0, show.income ? m.income ?? 0 : 0))
+    ...months.map((m) => Math.max(effShow.expenses ? m.v : 0, effShow.income ? m.income ?? 0 : 0))
   );
 
   const SERIES: { key: SeriesKey; label: string; color: string }[] = [
@@ -577,12 +580,14 @@ export default function Expenses() {
     { key: "expenses", label: "Расходы", color: "var(--neg)" },
     { key: "diff", label: "Разница", color: "var(--ink-2)" },
   ];
+  // В режиме «только расходы» переключатели рядов (Доходы/Расходы/Разница) скрыты.
+  const seriesToggles = expensesOnly ? [] : SERIES;
 
   const stats = [
     { key: "income" as SeriesKey, label: "Доходы", value: incVal, color: "var(--pos)", signed: false },
     { key: "expenses" as SeriesKey, label: "Расходы", value: expVal, color: "var(--neg)", signed: false },
     { key: "diff" as SeriesKey, label: "Разница", value: diffVal, color: diffVal >= 0 ? "var(--pos)" : "var(--neg)", signed: true },
-  ].filter((s) => show[s.key]);
+  ].filter((s) => effShow[s.key]);
 
   const isEmpty = months.length === 0 && weeks.length === 0;
 
@@ -675,7 +680,7 @@ export default function Expenses() {
   return (
     <>
       <Topbar
-        title="Расходы и доходы"
+        title={expensesOnly ? "Личные расходы" : "Расходы и доходы"}
         sub="Импорт из Google Sheets"
         right={
           <>
@@ -710,7 +715,9 @@ export default function Expenses() {
 
       {isEmpty ? (
         <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
-          Нет данных. Расходы подтянутся из Google Sheets, доходы — из отчёта «Отчет Общий» (чистая прибыль) при синхронизации.
+          {expensesOnly
+            ? "Нет данных. Расходы подтянутся из Google Sheets при синхронизации."
+            : "Нет данных. Расходы подтянутся из Google Sheets, доходы — из отчёта «Отчет Общий» (чистая прибыль) при синхронизации."}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -737,7 +744,7 @@ export default function Expenses() {
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                     <SplitToggle />
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {SERIES.map((s) => {
+                      {seriesToggles.map((s) => {
                         const on = show[s.key];
                         const disabled = s.key === "income" && !hasIncome;
                         return (
@@ -773,15 +780,17 @@ export default function Expenses() {
                   selIdx={idx}
                   onSelect={(i) => { setSelIdx(i); setOpenCat(null); setOpenSub(null); }}
                   split={split}
-                  showIncome={show.income}
-                  showExpense={show.expenses}
-                  showDiff={show.diff}
+                  showIncome={effShow.income}
+                  showExpense={effShow.expenses}
+                  showDiff={effShow.diff}
                   verticalLabels={false}
                   minSlot={62}
                 />
                 <div className="h-sub" style={{ marginTop: 12 }}>
                   {split
                     ? "Столбец расходов разбит на категории. Наведите курсор на столбец — увидите сумму за период; нажмите — категории справа."
+                    : expensesOnly
+                    ? "Нажмите на столбец месяца, чтобы посмотреть его категории. «По категориям» делит расход на сегменты."
                     : hasIncome
                     ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы. «По категориям» делит расход на сегменты; нажмите на месяц — категории справа."
                     : "Нажмите на столбец месяца, чтобы посмотреть его категории. «По категориям» делит расход на сегменты. Доходы появятся после синхронизации отчёта."}
@@ -805,7 +814,7 @@ export default function Expenses() {
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                     <SplitToggle />
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {SERIES.map((s) => {
+                      {seriesToggles.map((s) => {
                         const on = show[s.key];
                         const disabled = s.key === "income" && !hasIncome;
                         return (
@@ -841,15 +850,17 @@ export default function Expenses() {
                   selIdx={wIdx}
                   onSelect={(i) => { setSelWeekIdx(i); setOpenWeekCat(null); setOpenWeekSub(null); }}
                   split={split}
-                  showIncome={show.income}
-                  showExpense={show.expenses}
-                  showDiff={show.diff}
+                  showIncome={effShow.income}
+                  showExpense={effShow.expenses}
+                  showDiff={effShow.diff}
                   verticalLabels={true}
                   minSlot={46}
                 />
                 <div className="h-sub" style={{ marginTop: 12 }}>
                   {split
                     ? "Столбец расходов разбит на категории. Наведите курсор на столбец — увидите сумму за неделю; нажмите — категории справа."
+                    : expensesOnly
+                    ? "Наведите курсор на столбец — увидите сумму за неделю; нажмите на неделю — категории справа. «По категориям» делит расход на сегменты."
                     : hasIncome
                     ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы. «По категориям» делит расход на сегменты; нажмите на неделю — категории справа."
                     : "Наведите курсор на столбец — увидите сумму за неделю; нажмите на неделю — категории справа. «По категориям» делит расход на сегменты."}
