@@ -6,6 +6,7 @@ import { prisma } from "./prisma";
 import { initialStore, WALLETS, AGENCIES, HISTORY, DEFAULT_RESERVES, CHARTS } from "./mockData";
 import { relativeRu, daysAgoRu, dayMonthRu } from "./time";
 import { getCurrentUsdRub, fallbackRate } from "./fx";
+import { SUPPLEMENTAL_WEEKLY_INCOME, SUPPLEMENTAL_MONTHLY_INCOME } from "./supplementalIncome";
 import type {
   PersonalData,
   CompanyData,
@@ -127,6 +128,9 @@ export async function getPersonalData(): Promise<PersonalData> {
     // Monthly income (mostly dividends, from the ДДС sheet) keyed by "YYYY-MM".
     const incomeByPeriod = new Map<string, number>();
     for (const r of incomeRows) incomeByPeriod.set(r.period, num(r.usd));
+    // Досыпаем декабрь: в источнике его нет, задаём вручную (override, чтобы не
+    // зависеть от возможного шума источника по этому периоду).
+    for (const s of SUPPLEMENTAL_MONTHLY_INCOME) incomeByPeriod.set(s.key, s.usd);
 
     const months = monthRows.map((m) => {
       const period = m.monthStart.toISOString().slice(0, 7);
@@ -148,6 +152,8 @@ export async function getPersonalData(): Promise<PersonalData> {
     // report) keyed by weekEnd, aligned to the expense weeks (both Пн–Вс).
     const weekIncomeByEnd = new Map<string, number>();
     for (const r of weekIncomeRows) weekIncomeByEnd.set(r.weekEnd, num(r.usd));
+    // Досыпаем недели декабря (в источнике нет) — см. supplementalIncome.ts.
+    for (const s of SUPPLEMENTAL_WEEKLY_INCOME) weekIncomeByEnd.set(s.key, s.usd);
 
     // Weekly data
     const expenseWeeks: ExpenseWeek[] = weekRows.map((w) => ({ w: w.label, v: num(w.value), weekEnd: w.weekEnd, income: weekIncomeByEnd.get(w.weekEnd) ?? 0 }));
