@@ -1,8 +1,9 @@
 name: Apply expenses account
 
-# Вписывает EXPENSES_PASSWORD (и опц. EXPENSES_EMAIL) из GitHub-секретов в
-# /opt/capital/.env, пересоздаёт app (подхватить env → docker-entrypoint создаст/
-# обновит ограниченный аккаунт «расходы») и подтверждает наличие пользователя.
+# Создаёт/обновляет ограниченный аккаунт «расходы» (role=expenses).
+# ВАЖНО: пароль НЕ вписывается в .env (там sed/кавычки/интерполяция compose искажают
+# спецсимволы). Вместо этого пароль передаётся напрямую в процесс через docker exec -e
+# — байт-в-байт, без искажений. Затем проверяем bcrypt.compare прямо в контейнере.
 # Пароль в логах маскируется GitHub Actions.
 on:
   workflow_dispatch: {}
@@ -12,7 +13,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Inject credentials, recreate, ensure user over SSH
+      - name: Create/verify expenses account over SSH
         uses: appleboy/ssh-action@v1
         env:
           EXP_PASSWORD: ${{ secrets.EXPENSES_PASSWORD }}
@@ -28,22 +29,17 @@ jobs:
             cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
             if [ -z "$EXP_PASSWORD" ]; then echo "✗ секрет EXPENSES_PASSWORD пуст — добавьте его в GitHub → Settings → Secrets → Actions"; exit 1; fi
             EMAIL_VAL="${EXP_EMAIL:-expenses@capital.local}"
-            echo "=== вписываю EXPENSES_* в .env ==="
-            if grep -q '^EXPENSES_PASSWORD=' .env; then
-              sed -i "s|^EXPENSES_PASSWORD=.*|EXPENSES_PASSWORD=\"$EXP_PASSWORD\"|" .env
-            else
-              printf 'EXPENSES_PASSWORD="%s"\n' "$EXP_PASSWORD" >> .env
-            fi
+            echo "=== убираю EXPENSES_PASSWORD из .env (чтобы entrypoint не пересоздал аккаунт с искажённым паролем) ==="
+            sed -i '/^EXPENSES_PASSWORD=/d' .env || true
             if grep -q '^EXPENSES_EMAIL=' .env; then
               sed -i "s|^EXPENSES_EMAIL=.*|EXPENSES_EMAIL=\"$EMAIL_VAL\"|" .env
             else
               printf 'EXPENSES_EMAIL="%s"\n' "$EMAIL_VAL" >> .env
             fi
-            echo "EXPENSES_PASSWORD в .env: $(grep -q '^EXPENSES_PASSWORD=' .env && echo да || echo нет) | email: $EMAIL_VAL"
-            echo "=== пересоздаю app (entrypoint создаст/обновит аккаунт «расходы») ==="
-            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app 2>&1 | tail -6
-            sleep 12
-            echo "=== идемпотентно создаю/обновляю аккаунт (на случай, если entrypoint уже прошёл) ==="
-            docker exec capital-app-1 npx tsx prisma/ensure-expenses-user.ts 2>&1 | tail -3
+            echo "email аккаунта: $EMAIL_VAL"
+            echo "=== создаю/обновляю аккаунт напрямую (пароль байт-в-байт через docker exec -e) ==="
+            docker exec -e EXPENSES_PASSWORD="$EXP_PASSWORD" -e EXPENSES_EMAIL="$EMAIL_VAL" capital-app-1 npx tsx prisma/ensure-expenses-user.ts 2>&1 | tail -3
+            echo "=== проверка: bcrypt.compare(введённый пароль, хэш в БД) прямо в контейнере ==="
+            docker exec -e EXP_CHK="$EXP_PASSWORD" -e EMAIL_VAL="$EMAIL_VAL" capital-app-1 node -e 'const{PrismaClient}=require("@prisma/client");const b=require("bcryptjs");const p=new PrismaClient();const pw=(process.env.EXP_CHK||"").trim();p.user.findUnique({where:{email:process.env.EMAIL_VAL}}).then(u=>{if(!u)return console.log("нет пользователя");return b.compare(pw,u.passwordHash).then(ok=>console.log("compare:",ok,"| role:",u.role,"| длина пароля:",pw.length))}).catch(e=>console.log("ERR",String(e).slice(0,120))).finally(()=>p.$disconnect())' 2>&1 | tail -3
             echo "=== пользователи в БД ==="
             docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT email, role FROM \"User\" ORDER BY \"createdAt\";" 2>&1 | head -10

@@ -34,10 +34,11 @@ services:
       AUTH_SECRET: "${AUTH_SECRET:-change-me-to-a-long-random-string}"
       APP_EMAIL: "${APP_EMAIL:-admin@capital.local}"
       APP_PASSWORD: "${APP_PASSWORD:-capital123}"
-      # Ограниченный аккаунт «расходы» (только личные расходы). Пароль — секрет на
-      # сервере; если пусто, аккаунт не создаётся.
+      # Ограниченный аккаунт «расходы» (только личные расходы). ПАРОЛЬ сюда НЕ
+      # прокидываем: через .env/интерполяцию compose спецсимволы искажаются. Аккаунт
+      # создаётся/обновляется workflow «apply-expenses-user» — пароль передаётся прямо
+      # в процесс (docker exec -e), байт-в-байт. Здесь — только логин-идентификатор.
       EXPENSES_EMAIL: "${EXPENSES_EMAIL:-expenses@capital.local}"
-      EXPENSES_PASSWORD: "${EXPENSES_PASSWORD:-}"
       NODE_ENV: "production"
       # integrations
       GOOGLE_SHEETS_ID: "${GOOGLE_SHEETS_ID:-}"
