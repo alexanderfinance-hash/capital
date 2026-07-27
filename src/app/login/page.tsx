@@ -39,11 +39,11 @@ function LoginForm() {
         <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 22 }}>
           <div style={{ width: 34, height: 34, borderRadius: 9, background: "var(--brand)", display: "grid", placeItems: "center" }}>
             <span className="mono" style={{ color: "var(--brand-ink)", fontSize: 17, fontWeight: 600 }}>
-              К
+              Ф
             </span>
           </div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: ".02em" }}>КАПИТАЛ</div>
+            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: ".02em" }}>ФИНАНСЫ</div>
             <div className="k" style={{ fontSize: 9 }}>
               вход в дашборд
             </div>

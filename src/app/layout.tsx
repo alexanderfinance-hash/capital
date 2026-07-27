@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Дашборд капитала",
-  description: "Дашборд личного и корпоративного капитала",
+  title: "Дашборд финансов",
+  description: "Дашборд личных и корпоративных финансов",
 };
 
 /* Applies persisted theme before first paint to avoid a flash. */

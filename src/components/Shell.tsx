@@ -113,12 +113,12 @@ export function Shell({ restricted = false }: { restricted?: boolean; children?:
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--brand)", display: "grid", placeItems: "center", flex: "none" }}>
               <span className="mono" style={{ color: "var(--brand-ink)", fontSize: 15, fontWeight: 600 }}>
-                К
+                Ф
               </span>
             </div>
             {!collapsed && (
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: ".02em" }}>КАПИТАЛ</div>
+                <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: ".02em" }}>ФИНАНСЫ</div>
                 <div className="k" style={{ fontSize: 9 }}>
                   {brandSub}
                 </div>
