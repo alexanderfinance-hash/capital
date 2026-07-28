@@ -1,8 +1,7 @@
 name: Check pnl
 
-# Разовая диагностика (только чтение): полная структура ответа P&L-API за 7 мес
-# (янв–июл), чтобы понять, какое поле объекта scope="all" соответствует «Чистой
-# прибыли» из UI платформы (сейчас дашборд тянет net, и он не сходится).
+# Разовая диагностика (чтение БД + пробный синк profit): источник строк дохода
+# (profit vs dds), покрытие недель, времена последних синков.
 on:
   workflow_dispatch: {}
 
@@ -18,16 +17,15 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: false
-          command_timeout: 3m
+          command_timeout: 4m
           script: |
-            docker exec capital-app-1 node -e '
-              const t=process.env.PNL_API_TOKEN,u=process.env.PNL_API_URL||"https://finance-company.online/api/integrations/pnl";
-              fetch(u+"?mode=month&periods=7",{headers:{Authorization:"Bearer "+t}}).then(r=>r.json()).then(j=>{
-                console.log("updatedAt",j.updatedAt,"currency",j.currency);
-                console.log("topLevelKeys",JSON.stringify(Object.keys(j)));
-                console.log("periods",JSON.stringify((j.periods||[]).map(p=>p.key)));
-                const all=(j.projects||[]).find(p=>p.scope==="all");
-                console.log("scope=all keys",JSON.stringify(Object.keys(all||{})));
-                console.log("scope=all FULL",JSON.stringify(all));
-              }).catch(e=>console.log("ERR",String(e&&e.cause||e).slice(0,200)));
-            ' 2>&1 | tail -30
+            echo "=== MonthlyIncome (period | usd | source) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period;" 2>&1 | head -20
+            echo "=== WeeklyIncome: кол-во строк + диапазон + источник ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), min(\"weekEnd\"), max(\"weekEnd\"), string_agg(DISTINCT source, ',') FROM \"WeeklyIncome\";" 2>&1 | head -5
+            echo "=== SyncState (profit/dividends/expenses) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT source, \"lastSyncedAt\", ok FROM \"SyncState\" WHERE source IN ('profit','dividends','expenses') ORDER BY source;" 2>&1 | head -5
+            echo "=== пробный синк profit (POST) ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/profit",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,months:(j.months||[]).length,weeks:(j.weeks||[]).length,last3m:(j.months||[]).slice(-3),err:j.error}).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -3
+            echo "=== MonthlyIncome ПОСЛЕ синка ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period DESC LIMIT 8;" 2>&1 | head -10
