@@ -20,7 +20,12 @@ import { getUsdRubRates } from "../fx";
 
 const DEFAULT_PNL_URL = "https://finance-company.online/api/integrations/pnl";
 const pnlScope = () => (process.env.PNL_SCOPE || "all").trim();
-const pnlPeriods = () => Math.min(60, Math.max(1, Number(process.env.PNL_PERIODS) || 12));
+// Сколько периодов запрашивать. Месяцы: 12 (год). Недели: больше, чтобы недельный
+// график покрывал тот же год (12 недель — это всего ~3 месяца, из-за чего доход
+// за янв–апр не подтягивался). Оба переопределяются ENV, макс. 60.
+const pnlMonthPeriods = () => Math.min(60, Math.max(1, Number(process.env.PNL_PERIODS) || 12));
+const pnlWeekPeriods = () => Math.min(60, Math.max(1, Number(process.env.PNL_WEEK_PERIODS) || 40));
+const pnlPeriodsFor = (mode: "month" | "week") => (mode === "week" ? pnlWeekPeriods() : pnlMonthPeriods());
 
 interface PnlPeriod {
   key: string;
@@ -45,7 +50,7 @@ async function fetchPnl(mode: "month" | "week"): Promise<PnlResponse> {
   const base = (process.env.PNL_API_URL || DEFAULT_PNL_URL).replace(/\/+$/, "");
   const token = process.env.PNL_API_TOKEN;
   if (!token) throw new Error("PNL_API_TOKEN не задан — укажите токен финансовой платформы в .env");
-  const url = `${base}?mode=${mode}&periods=${pnlPeriods()}`;
+  const url = `${base}?mode=${mode}&periods=${pnlPeriodsFor(mode)}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`PNL ${mode} HTTP ${res.status}`);
   const json = (await res.json()) as PnlResponse;

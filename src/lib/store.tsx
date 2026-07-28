@@ -293,7 +293,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   }, [toast]);
 
   // Принудительная синхронизация личных расходов (Google Sheets «Отчет») и
-  // доходов (ДДС) — чтобы свежезаполненная неделя/месяц появились без ожидания
+  // доходов (P&L-API, чистая прибыль) — чтобы свежая неделя/месяц появились без ожидания
   // часового крона. Не обнуляет данные при сбое (PRD §7): при ошибке оставляем
   // прежние цифры и показываем тост.
   const refreshExpenses = useCallback(() => {
@@ -303,8 +303,10 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
       try {
         const res = await fetch("/api/sync/expenses", { method: "POST" });
         const j = await res.json().catch(() => ({}));
-        // Доходы (дивиденды из ДДС) — чтобы серия доходов тоже подтянулась.
-        await fetch("/api/sync/dividends", { method: "POST" }).catch(() => {});
+        // Доходы (чистая прибыль из P&L-API) — чтобы серия доходов тоже подтянулась.
+        // Раньше тут дёргался /api/sync/dividends (ДДС), который ПЕРЕЗАТИРАЛ доход
+        // дивидендами; теперь источник дохода один — profit (P&L).
+        await fetch("/api/sync/profit", { method: "POST" }).catch(() => {});
         setExpensesSyncing(false);
         if (j && j.ok) {
           toast("Расходы обновлены");

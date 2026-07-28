@@ -77,6 +77,7 @@ services:
       PNL_API_TOKEN: "${PNL_API_TOKEN:-}"
       PNL_SCOPE: "${PNL_SCOPE:-all}"
       PNL_PERIODS: "${PNL_PERIODS:-12}"
+      PNL_WEEK_PERIODS: "${PNL_WEEK_PERIODS:-40}"
       CRON_SECRET: "${CRON_SECRET:-change-me-cron-secret}"
       # Service-account key is mounted (below) rather than baked into the image.
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/app/secrets/google-service-account.json}"

@@ -104,7 +104,7 @@ export function Shell({ restricted = false }: { restricted?: boolean; children?:
   );
 
   const View = VIEWS[section] || Overview;
-  const brandSub = restricted ? "личные расходы" : "личный баланс";
+  const brandSub = restricted ? "личные расходы" : "личные финансы";
 
   return (
     <div className="app-shell ds">
