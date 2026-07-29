@@ -105,12 +105,12 @@ export function senderLabel(m: TgMessage): string {
 }
 
 /** Substrings of trusted report senders (comma-separated in
- *  TELEGRAM_REPORT_SENDER), lower-cased. Defaults to ["arbi"] so the daily
- *  report (posted by «Arbi | Assistant») is trusted out of the box without any
- *  server config. Set "*" to disable the filter (process every sender). */
+ *  TELEGRAM_REPORT_SENDER), lower-cased. Defaults to ["fin_3_0"] — текущий автор
+ *  ежедневного отчёта по агентствам (@fin_3_0) — доверяется из коробки без
+ *  серверной настройки. Set "*" to disable the filter (process every sender). */
 export function reportSenderAllow(): string[] {
   const raw = (process.env.TELEGRAM_REPORT_SENDER || "").trim();
-  if (!raw) return ["arbi"]; // sensible default — report author contains "Arbi"
+  if (!raw) return ["fin_3_0"]; // текущий автор отчёта — @fin_3_0
   return raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
