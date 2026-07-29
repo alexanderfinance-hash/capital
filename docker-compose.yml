@@ -56,6 +56,9 @@ services:
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
       TELEGRAM_REPORT_MARKER: "${TELEGRAM_REPORT_MARKER:-}"
+      # Кому доверяем отчёт по агентствам (подстроки, через запятую). Текущий автор —
+      # @fin_3_0. Пусто → код по умолчанию берёт fin_3_0. "*" — отключить фильтр.
+      TELEGRAM_REPORT_SENDER: "${TELEGRAM_REPORT_SENDER:-fin_3_0}"
       TELEGRAM_AGENCY_AUTOCREATE: "${TELEGRAM_AGENCY_AUTOCREATE:-true}"
       # Webhook mode (when outbound to api.telegram.org is blocked): set a secret
       # and register the webhook (see TELEGRAM.md). Polling turns off automatically.
