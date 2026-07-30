@@ -1,7 +1,8 @@
 name: Check pnl
 
-# Диагностика Telegram-синка агентств: пик входящих updates (кто/чат/текст),
-# затем реальный синк POST /api/sync/telegram, состояние курсора и свежесть агентств.
+# Диагностика: состоит ли бот в настроенном чате (getChat/getChatMember), и что
+# в очереди updates. Помогает отличить «бот не в том чате» от «апдейты съедает
+# другой потребитель того же токена».
 on:
   workflow_dispatch: {}
 
@@ -19,20 +20,22 @@ jobs:
           script_stop: false
           command_timeout: 4m
           script: |
-            echo "=== пик входящих updates (getUpdates -10, без подтверждения) ==="
             docker exec capital-app-1 node -e '
-              const T=process.env.TELEGRAM_BOT_TOKEN;
+              const T=process.env.TELEGRAM_BOT_TOKEN,CHAT=process.env.TELEGRAM_CHAT_ID||"";
               const api=(m,p)=>fetch("https://api.telegram.org/bot"+T+"/"+m,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(p||{})}).then(r=>r.json());
               (async()=>{
-                console.log("REPORT_SENDER=",JSON.stringify(process.env.TELEGRAM_REPORT_SENDER||""),"| CHAT_ID=",process.env.TELEGRAM_CHAT_ID||"");
-                const up=await api("getUpdates",{offset:-10,timeout:0,allowed_updates:["message","channel_post","edited_message","edited_channel_post"]}).catch(e=>({description:String(e)}));
+                const me=await api("getMe"); const botId=me.result&&me.result.id;
+                console.log("bot",me.result&&("@"+me.result.username+"/"+botId));
+                console.log("CHAT_ID",CHAT);
+                const gc=await api("getChat",{chat_id:CHAT});
+                console.log("getChat:", gc.ok ? JSON.stringify({id:gc.result.id,title:gc.result.title,type:gc.result.type}) : ("ERR "+gc.error_code+" "+gc.description));
+                const cnt=await api("getChatMemberCount",{chat_id:CHAT});
+                console.log("memberCount:", cnt.ok?cnt.result:("ERR "+cnt.description));
+                const mem=await api("getChatMember",{chat_id:CHAT,user_id:botId});
+                console.log("botMembership:", mem.ok?JSON.stringify({status:mem.result.status}):("ERR "+mem.description));
+                const up=await api("getUpdates",{offset:-10,timeout:0,allowed_updates:["message","channel_post","edited_message","edited_channel_post"]});
                 const arr=up.result;
-                console.log("getUpdates(-10):",Array.isArray(arr)?("count "+arr.length):("ERR "+(up.description||JSON.stringify(up))));
-                (Array.isArray(arr)?arr:[]).forEach(u=>{const m=u.message||u.channel_post||u.edited_message||u.edited_channel_post;if(!m){console.log("  upd",u.update_id,"(no msg)");return;}const t=(m.text||m.caption||"").replace(/\n/g," ").slice(0,90);console.log("  upd",u.update_id,new Date(m.date*1000).toISOString(),"chat",m.chat&&m.chat.id,"user",m.from&&("@"+(m.from.username||"-")+"/"+m.from.id),"schat",m.sender_chat&&m.sender_chat.title,"txt:",t);});
+                console.log("getUpdates(-10):",Array.isArray(arr)?("count "+arr.length):("ERR "+(up.description||"")));
+                (Array.isArray(arr)?arr:[]).forEach(u=>{const m=u.message||u.channel_post||u.edited_message||u.edited_channel_post;if(!m)return;const t=(m.text||m.caption||"").replace(/\n/g," ").slice(0,80);console.log("  upd",u.update_id,new Date(m.date*1000).toISOString(),"chat",m.chat&&m.chat.id,"user","@"+((m.from&&m.from.username)||"-"),"txt:",t);});
               })();
             ' 2>&1 | tail -16
-            echo "=== реальный синк POST /api/sync/telegram ==="
-            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/telegram",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify(j).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -4
-            echo "=== telegramState + свежесть агентств ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT \"lastChatId\", \"lastMessageAt\" FROM \"TelegramState\" WHERE id='default';" 2>&1 | head -3
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT platform, balance, \"enteredBy\", \"updatedAt\" FROM \"Agency\" ORDER BY \"updatedAt\" DESC LIMIT 6;" 2>&1 | head -8
