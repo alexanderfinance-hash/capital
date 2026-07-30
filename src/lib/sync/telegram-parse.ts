@@ -187,7 +187,14 @@ export function parseReport(text: string, entities?: TextEntity[]): { name: stri
   const seen = new Set<string>();
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const e = spendMode ? parseSpendLine(line) : parseLine(line);
+    let e = spendMode ? parseSpendLine(line) : parseLine(line);
+    // В spend-режиме автор иногда забывает пометку «(спенд …)» на отдельной строке
+    // (напр. «Unico | DAIG Agency (FB, 7%) - $1117»). Подхватываем такую строку
+    // обычным парсером, НО только при явном символе валюты ($/₽) — чтобы не зацепить
+    // блок «Нужно пополнить …» (там суммы без валюты, вида «+3000»).
+    if (!e && spendMode && !SPEND_RE.test(line) && CCY_RE.test(line)) {
+      e = parseLine(line);
+    }
     if (!e) continue;
 
     // Prefer the bold-formatted name (clipped to the pre-balance region).
