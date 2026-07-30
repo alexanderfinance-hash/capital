@@ -1,8 +1,8 @@
 name: Check pnl
 
-# Диагностика: состоит ли бот в настроенном чате (getChat/getChatMember), и что
-# в очереди updates. Помогает отличить «бот не в том чате» от «апдейты съедает
-# другой потребитель того же токена».
+# Обновить TELEGRAM_BOT_TOKEN из секрета (новый выделенный бот дашборда), сбросить
+# курсор TelegramState (у нового бота своя нумерация update_id), пересоздать app,
+# проверить getMe и прогнать реальный синк агентств. Токен маскируется Actions.
 on:
   workflow_dispatch: {}
 
@@ -11,31 +11,35 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Probe telegram over SSH
+      - name: Swap bot token + resync over SSH
         uses: appleboy/ssh-action@v1
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: TG_TOKEN
           script_stop: false
-          command_timeout: 4m
+          command_timeout: 8m
           script: |
-            docker exec capital-app-1 node -e '
-              const T=process.env.TELEGRAM_BOT_TOKEN,CHAT=process.env.TELEGRAM_CHAT_ID||"";
-              const api=(m,p)=>fetch("https://api.telegram.org/bot"+T+"/"+m,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(p||{})}).then(r=>r.json());
-              (async()=>{
-                const me=await api("getMe"); const botId=me.result&&me.result.id;
-                console.log("bot",me.result&&("@"+me.result.username+"/"+botId));
-                console.log("CHAT_ID",CHAT);
-                const gc=await api("getChat",{chat_id:CHAT});
-                console.log("getChat:", gc.ok ? JSON.stringify({id:gc.result.id,title:gc.result.title,type:gc.result.type}) : ("ERR "+gc.error_code+" "+gc.description));
-                const cnt=await api("getChatMemberCount",{chat_id:CHAT});
-                console.log("memberCount:", cnt.ok?cnt.result:("ERR "+cnt.description));
-                const mem=await api("getChatMember",{chat_id:CHAT,user_id:botId});
-                console.log("botMembership:", mem.ok?JSON.stringify({status:mem.result.status}):("ERR "+mem.description));
-                const up=await api("getUpdates",{offset:-10,timeout:0,allowed_updates:["message","channel_post","edited_message","edited_channel_post"]});
-                const arr=up.result;
-                console.log("getUpdates(-10):",Array.isArray(arr)?("count "+arr.length):("ERR "+(up.description||"")));
-                (Array.isArray(arr)?arr:[]).forEach(u=>{const m=u.message||u.channel_post||u.edited_message||u.edited_channel_post;if(!m)return;const t=(m.text||m.caption||"").replace(/\n/g," ").slice(0,80);console.log("  upd",u.update_id,new Date(m.date*1000).toISOString(),"chat",m.chat&&m.chat.id,"user","@"+((m.from&&m.from.username)||"-"),"txt:",t);});
-              })();
-            ' 2>&1 | tail -16
+            cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
+            if [ -z "$TG_TOKEN" ]; then echo "✗ секрет TELEGRAM_BOT_TOKEN пуст"; exit 1; fi
+            echo "=== вписываю новый TELEGRAM_BOT_TOKEN в .env ==="
+            if grep -q '^TELEGRAM_BOT_TOKEN=' .env; then
+              sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=\"$TG_TOKEN\"|" .env
+            else
+              printf 'TELEGRAM_BOT_TOKEN="%s"\n' "$TG_TOKEN" >> .env
+            fi
+            echo "TELEGRAM_BOT_TOKEN в .env: $(grep -q '^TELEGRAM_BOT_TOKEN=' .env && echo да || echo нет)"
+            echo "=== сбрасываю курсор TelegramState (новый бот — своя нумерация) ==="
+            docker exec capital-db-1 psql -U capital -d capital -c "DELETE FROM \"TelegramState\" WHERE id='default';" 2>&1 | tail -2
+            echo "=== пересоздаю app+worker (подхватить новый токен) ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app worker 2>&1 | tail -6
+            sleep 12
+            echo "=== getMe (кто теперь бот) ==="
+            docker exec capital-app-1 node -e 'fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/getMe").then(r=>r.json()).then(j=>console.log(j.ok?("@"+j.result.username+" / read_all="+j.result.can_read_all_group_messages):("ERR "+j.description))).catch(e=>console.log("ERR",String(e).slice(0,120)))' 2>&1 | tail -2
+            echo "=== реальный синк агентств ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/telegram",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify(j).slice(0,700))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -3
+            echo "=== свежесть агентств (топ по updatedAt) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT platform, balance, \"enteredBy\", \"updatedAt\" FROM \"Agency\" ORDER BY \"updatedAt\" DESC LIMIT 6;" 2>&1 | head -8
