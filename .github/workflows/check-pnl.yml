@@ -1,6 +1,7 @@
 name: Check pnl
 
-# Проверка: что видит новый бот и что подтянул синк агентств.
+# Разовая диагностика (чтение БД + пробный синк profit): источник строк дохода
+# (profit vs dds), покрытие недель, времена последних синков.
 on:
   workflow_dispatch: {}
 
@@ -9,7 +10,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Verify telegram sync over SSH
+      - name: Probe over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -18,19 +19,13 @@ jobs:
           script_stop: false
           command_timeout: 4m
           script: |
-            echo "=== пик очереди updates (getUpdates -10, без подтверждения) ==="
-            docker exec capital-app-1 node -e '
-              const T=process.env.TELEGRAM_BOT_TOKEN;
-              const api=(m,p)=>fetch("https://api.telegram.org/bot"+T+"/"+m,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(p||{})}).then(r=>r.json());
-              (async()=>{
-                const me=await api("getMe"); console.log("bot",me.result&&("@"+me.result.username));
-                const up=await api("getUpdates",{offset:-10,timeout:0,allowed_updates:["message","channel_post","edited_message","edited_channel_post"]});
-                const arr=up.result;
-                console.log("getUpdates(-10):",Array.isArray(arr)?("count "+arr.length):("ERR "+(up.description||"")));
-                (Array.isArray(arr)?arr:[]).forEach(u=>{const m=u.message||u.channel_post||u.edited_message||u.edited_channel_post;if(!m)return;const t=(m.text||m.caption||"").replace(/\n/g," ").slice(0,80);console.log("  upd",u.update_id,new Date(m.date*1000).toISOString(),"chat",m.chat&&m.chat.id,"user","@"+((m.from&&m.from.username)||"-"),"txt:",t);});
-              })();
-            ' 2>&1 | tail -16
-            echo "=== реальный синк агентств ==="
-            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/telegram",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify(j).slice(0,900))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -4
-            echo "=== свежесть агентств (топ по updatedAt) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT platform, balance, \"enteredBy\", \"updatedAt\" FROM \"Agency\" ORDER BY \"updatedAt\" DESC LIMIT 8;" 2>&1 | head -10
+            echo "=== MonthlyIncome (period | usd | source) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period;" 2>&1 | head -20
+            echo "=== WeeklyIncome: кол-во строк + диапазон + источник ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), min(\"weekEnd\"), max(\"weekEnd\"), string_agg(DISTINCT source, ',') FROM \"WeeklyIncome\";" 2>&1 | head -5
+            echo "=== SyncState (profit/dividends/expenses) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT source, \"lastSyncedAt\", ok FROM \"SyncState\" WHERE source IN ('profit','dividends','expenses') ORDER BY source;" 2>&1 | head -5
+            echo "=== пробный синк profit (POST) ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/profit",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,months:(j.months||[]).length,weeks:(j.weeks||[]).length,last3m:(j.months||[]).slice(-3),err:j.error}).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -3
+            echo "=== MonthlyIncome ПОСЛЕ синка ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period DESC LIMIT 8;" 2>&1 | head -10
