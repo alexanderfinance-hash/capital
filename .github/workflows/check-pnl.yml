@@ -1,8 +1,7 @@
 name: Check pnl
 
-# Разовая диагностика Telegram-синка агентств: режим (webhook/polling), курсор
-# offset, последнее сообщение, и пик последних updates (кто отправитель, чат, текст)
-# — чтобы понять, почему отчёт @fin_3_0 не подтянулся. Только чтение.
+# Диагностика Telegram-синка агентств: пик входящих updates (кто/чат/текст),
+# затем реальный синк POST /api/sync/telegram, состояние курсора и свежесть агентств.
 on:
   workflow_dispatch: {}
 
@@ -20,22 +19,20 @@ jobs:
           script_stop: false
           command_timeout: 4m
           script: |
+            echo "=== пик входящих updates (getUpdates -10, без подтверждения) ==="
             docker exec capital-app-1 node -e '
-              const T=process.env.TELEGRAM_BOT_TOKEN,CHAT=process.env.TELEGRAM_CHAT_ID||"",WH=process.env.TELEGRAM_WEBHOOK_SECRET||"",SENDER=process.env.TELEGRAM_REPORT_SENDER||"";
+              const T=process.env.TELEGRAM_BOT_TOKEN;
               const api=(m,p)=>fetch("https://api.telegram.org/bot"+T+"/"+m,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(p||{})}).then(r=>r.json());
               (async()=>{
-                console.log("ENV chatIdSet",!!CHAT,"chatId",CHAT,"| webhookSecretSet",!!WH,"| REPORT_SENDER=",JSON.stringify(SENDER));
-                const me=await api("getMe").catch(e=>({description:String(e)})); console.log("getMe",JSON.stringify(me.result||me.description));
-                const wh=await api("getWebhookInfo").catch(e=>({description:String(e)})); console.log("webhookInfo",JSON.stringify(wh.result||wh.description));
-                try{const {PrismaClient}=require("@prisma/client");const pr=new PrismaClient();
-                  const st=await pr.telegramState.findUnique({where:{id:"default"}});
-                  console.log("telegramState",JSON.stringify(st,(k,v)=>typeof v==="bigint"?v.toString():v));
-                  const ss=await pr.syncState.findUnique({where:{source:"telegram"}});
-                  console.log("syncState.telegram",JSON.stringify(ss));
-                  await pr.$disconnect();}catch(e){console.log("DB ERR",String(e).slice(0,120));}
+                console.log("REPORT_SENDER=",JSON.stringify(process.env.TELEGRAM_REPORT_SENDER||""),"| CHAT_ID=",process.env.TELEGRAM_CHAT_ID||"");
                 const up=await api("getUpdates",{offset:-10,timeout:0,allowed_updates:["message","channel_post","edited_message","edited_channel_post"]}).catch(e=>({description:String(e)}));
                 const arr=up.result;
                 console.log("getUpdates(-10):",Array.isArray(arr)?("count "+arr.length):("ERR "+(up.description||JSON.stringify(up))));
-                (Array.isArray(arr)?arr:[]).forEach(u=>{const m=u.message||u.channel_post||u.edited_message||u.edited_channel_post;if(!m){console.log("  upd",u.update_id,"(no msg)");return;}const t=(m.text||m.caption||"").replace(/\n/g," ").slice(0,70);console.log("  upd",u.update_id,new Date(m.date*1000).toISOString(),"chat",m.chat&&m.chat.id,"user",m.from&&("@"+(m.from.username||"-")+"/"+m.from.id),"schat",m.sender_chat&&m.sender_chat.title,"txt:",t);});
+                (Array.isArray(arr)?arr:[]).forEach(u=>{const m=u.message||u.channel_post||u.edited_message||u.edited_channel_post;if(!m){console.log("  upd",u.update_id,"(no msg)");return;}const t=(m.text||m.caption||"").replace(/\n/g," ").slice(0,90);console.log("  upd",u.update_id,new Date(m.date*1000).toISOString(),"chat",m.chat&&m.chat.id,"user",m.from&&("@"+(m.from.username||"-")+"/"+m.from.id),"schat",m.sender_chat&&m.sender_chat.title,"txt:",t);});
               })();
-            ' 2>&1 | tail -30
+            ' 2>&1 | tail -16
+            echo "=== реальный синк POST /api/sync/telegram ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/telegram",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify(j).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -4
+            echo "=== telegramState + свежесть агентств ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT \"lastChatId\", \"lastMessageAt\" FROM \"TelegramState\" WHERE id='default';" 2>&1 | head -3
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT platform, balance, \"enteredBy\", \"updatedAt\" FROM \"Agency\" ORDER BY \"updatedAt\" DESC LIMIT 6;" 2>&1 | head -8
