@@ -354,6 +354,7 @@ function TimelineChart({
                   const net = b.income - b.expense;
                   const expH = (b.expense / top) * PLOT_H;
                   const incH = (b.income / top) * PLOT_H;
+                  const deltaH = (Math.abs(net) / top) * PLOT_H; // высота столбца «Разница» (|доход−расход|)
                   const segs = b.cats.filter((c) => c.value > 0).slice().sort((a, c) => c.value - a.value);
                   return (
                     <button
@@ -362,8 +363,8 @@ function TimelineChart({
                       onMouseEnter={() => setHover({ i })}
                       style={{ width: slotW, flex: "0 0 auto", height: "100%", position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}
                     >
-                      {showDiff && (showIncome || showExpense) && (
-                        <span className="mono" style={{ position: "absolute", left: 0, right: 0, top: Math.max(0, PLOT_H - Math.max(expH, incH) - 15), textAlign: "center", fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here || hot ? 1 : 0.55, pointerEvents: "none" }}>
+                      {showDiff && (
+                        <span className="mono" style={{ position: "absolute", left: 0, right: 0, top: Math.max(0, PLOT_H - Math.max(expH, incH, deltaH) - 15), textAlign: "center", fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here || hot ? 1 : 0.55, pointerEvents: "none" }}>
                           {fmtVSigned(net)}
                         </span>
                       )}
@@ -386,6 +387,10 @@ function TimelineChart({
                       ) : (
                         <div style={{ width: Math.min(22, slotW * (showIncome ? 0.3 : 0.46)), height: `${expH.toFixed(1)}px`, background: "var(--neg)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
                       ))}
+                      {showDiff && (
+                        // Столбец «Разница» = |доход − расход|; знак читается по цветной подписи сверху.
+                        <div title="Разница (доход − расход)" style={{ width: Math.min(20, slotW * 0.26), height: `${deltaH.toFixed(1)}px`, background: "var(--ink-2)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
+                      )}
                     </button>
                   );
                 })}
@@ -547,7 +552,10 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
   const hasIncome =
     !expensesOnly && (months.some((m) => (m.income ?? 0) > 0) || weeks.some((w) => (w.income ?? 0) > 0));
 
-  const maxW = Math.max(1, ...weeks.map((w) => Math.max(w.v, effShow.income ? w.income ?? 0 : 0)));
+  const maxW = Math.max(
+    1,
+    ...weeks.map((w) => Math.max(effShow.expenses ? w.v : 0, effShow.income ? w.income ?? 0 : 0, effShow.diff ? Math.abs((w.income ?? 0) - w.v) : 0))
+  );
 
   // Данные для прокручиваемой диаграммы по времени (верхний график).
   const monthBars: TimelineBar[] = useMemo(
@@ -572,7 +580,7 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
   );
   const monthChartMax = Math.max(
     1,
-    ...months.map((m) => Math.max(effShow.expenses ? m.v : 0, effShow.income ? m.income ?? 0 : 0))
+    ...months.map((m) => Math.max(effShow.expenses ? m.v : 0, effShow.income ? m.income ?? 0 : 0, effShow.diff ? Math.abs((m.income ?? 0) - m.v) : 0))
   );
 
   const SERIES: { key: SeriesKey; label: string; color: string }[] = [
@@ -792,7 +800,7 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
                     : expensesOnly
                     ? "Нажмите на столбец месяца, чтобы посмотреть его категории. «По категориям» делит расход на сегменты."
                     : hasIncome
-                    ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы. «По категориям» делит расход на сегменты; нажмите на месяц — категории справа."
+                    ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы, тёмный — разница (остаток за период). «По категориям» делит расход на сегменты; нажмите на месяц — категории справа."
                     : "Нажмите на столбец месяца, чтобы посмотреть его категории. «По категориям» делит расход на сегменты. Доходы появятся после синхронизации отчёта."}
                 </div>
               </>
@@ -862,7 +870,7 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
                     : expensesOnly
                     ? "Наведите курсор на столбец — увидите сумму за неделю; нажмите на неделю — категории справа. «По категориям» делит расход на сегменты."
                     : hasIncome
-                    ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы. «По категориям» делит расход на сегменты; нажмите на неделю — категории справа."
+                    ? "Зелёный — доходы (чистая прибыль из отчёта), красный — расходы, тёмный — разница (остаток за период). «По категориям» делит расход на сегменты; нажмите на неделю — категории справа."
                     : "Наведите курсор на столбец — увидите сумму за неделю; нажмите на неделю — категории справа. «По категориям» делит расход на сегменты."}
                 </div>
               </>
