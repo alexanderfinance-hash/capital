@@ -1,6 +1,7 @@
 name: Check pnl
 
-# Диагностика DAIG: что в очереди updates, что подтянул синк (entries), значение DAIG в БД.
+# Разовая диагностика (чтение БД + пробный синк profit): источник строк дохода
+# (profit vs dds), покрытие недель, времена последних синков.
 on:
   workflow_dispatch: {}
 
@@ -18,15 +19,13 @@ jobs:
           script_stop: false
           command_timeout: 4m
           script: |
-            echo "=== пик очереди updates (getUpdates -10) ==="
-            docker exec capital-app-1 node -e '
-              const T=process.env.TELEGRAM_BOT_TOKEN;
-              fetch("https://api.telegram.org/bot"+T+"/getUpdates",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({offset:-10,timeout:0,allowed_updates:["message","channel_post","edited_message","edited_channel_post"]})}).then(r=>r.json()).then(j=>{
-                const arr=j.result||[];console.log("count",arr.length);
-                arr.forEach(u=>{const m=u.message||u.channel_post||u.edited_message||u.edited_channel_post;if(!m)return;const daig=(m.text||"").split("\n").filter(l=>/daig/i.test(l));console.log("upd",u.update_id,new Date(m.date*1000).toISOString(),"@"+((m.from&&m.from.username)||"-"),"entities",(m.entities||[]).length,"DAIG-строка:",JSON.stringify(daig));});
-              }).catch(e=>console.log("ERR",String(e).slice(0,120)));
-            ' 2>&1 | tail -8
-            echo "=== реальный синк агентств (полный список entries) ==="
-            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/telegram",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>{console.log("ok",j.ok,"consumed",j.consumed,"messageAt",j.messageAt,"updated",j.updated,"created",j.created);(j.entries||[]).forEach(e=>console.log("  ",e.action,JSON.stringify(e.name),e.amount));}).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -30
-            echo "=== DAIG в БД ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT platform, balance, \"enteredBy\", \"updatedAt\" FROM \"Agency\" WHERE platform ILIKE '%daig%';" 2>&1 | head -5
+            echo "=== MonthlyIncome (period | usd | source) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period;" 2>&1 | head -20
+            echo "=== WeeklyIncome: кол-во строк + диапазон + источник ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), min(\"weekEnd\"), max(\"weekEnd\"), string_agg(DISTINCT source, ',') FROM \"WeeklyIncome\";" 2>&1 | head -5
+            echo "=== SyncState (profit/dividends/expenses) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT source, \"lastSyncedAt\", ok FROM \"SyncState\" WHERE source IN ('profit','dividends','expenses') ORDER BY source;" 2>&1 | head -5
+            echo "=== пробный синк profit (POST) ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/profit",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,months:(j.months||[]).length,weeks:(j.weeks||[]).length,last3m:(j.months||[]).slice(-3),err:j.error}).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -3
+            echo "=== MonthlyIncome ПОСЛЕ синка ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period DESC LIMIT 8;" 2>&1 | head -10
