@@ -363,8 +363,11 @@ function TimelineChart({
                       onMouseEnter={() => setHover({ i })}
                       style={{ width: slotW, flex: "0 0 auto", height: "100%", position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}
                     >
-                      {showDiff && (
-                        <span className="mono" style={{ position: "absolute", left: 0, right: 0, top: Math.max(0, PLOT_H - Math.max(expH, incH, deltaH) - 15), textAlign: "center", fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here || hot ? 1 : 0.55, pointerEvents: "none" }}>
+                      {/* Подпись разницы: в месячном виде — над всеми столбцами; в
+                          недельном (узкие столбцы, подписи налезали) — только над
+                          выбранным/наведённым (точное число есть в «Разница за …» и в тултипе). */}
+                      {showDiff && (!verticalLabels || here || hot) && (
+                        <span className="mono" style={{ position: "absolute", left: 0, right: 0, top: Math.max(0, PLOT_H - Math.max(expH, incH, deltaH) - 15), textAlign: "center", fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here || hot ? 1 : 0.55, pointerEvents: "none", whiteSpace: "nowrap", zIndex: here || hot ? 2 : 1 }}>
                           {fmtVSigned(net)}
                         </span>
                       )}
