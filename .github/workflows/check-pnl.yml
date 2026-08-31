@@ -1,6 +1,7 @@
 name: Check pnl
 
-# Разбор роста личного капитала/крипты: снимки по дням + состав активов + цены.
+# Проверка: живые ли цены крипты. Сверяем прямой ответ CMC с ценами, зашитыми в
+# стоимость активов (value/amount), и смотрим state синка crypto.
 on:
   workflow_dispatch: {}
 
@@ -18,11 +19,17 @@ jobs:
           script_stop: false
           command_timeout: 4m
           script: |
-            echo "=== крипто-снимки по дням (макс/мин за день, посл. 40 дней) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT date_trunc('day',\"capturedAt\")::date d, round(max(value)) mx, round(min(value)) mn FROM \"CapitalSnapshot\" WHERE scope='crypto' AND \"capturedAt\" > now() - interval '40 days' GROUP BY d ORDER BY d;" 2>&1 | tail -42
-            echo "=== personal-снимки по дням (макс за день, посл. 40 дней) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT date_trunc('day',\"capturedAt\")::date d, round(max(value)) mx FROM \"CapitalSnapshot\" WHERE scope='personal' AND \"capturedAt\" > now() - interval '40 days' GROUP BY d ORDER BY d;" 2>&1 | tail -42
-            echo "=== состав активов (топ по value) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT name, symbol, round(coalesce(amount,0),4) amt, round(value) val, bucket, source, liability FROM \"Asset\" ORDER BY value DESC LIMIT 20;" 2>&1 | head -22
-            echo "=== цены монет ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT symbol, round(usd,4), \"fetchedAt\" FROM \"PriceCache\" ORDER BY symbol;" 2>&1 | head -10
+            echo "=== CMC_API_KEY задан? + state синка crypto ==="
+            docker exec capital-app-1 node -e 'console.log("CMC_API_KEY set:", !!process.env.CMC_API_KEY, "| CMC_SYMBOL_ALIASES:", process.env.CMC_SYMBOL_ALIASES||"(нет)")'
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT source, \"lastSyncedAt\", ok FROM \"SyncState\" WHERE source='crypto';" 2>&1 | head -3
+            echo "=== живой прямой ответ CMC (BTC,ETH,TRX,GRAM,USDT) ==="
+            docker exec capital-app-1 node -e '
+              const key=process.env.CMC_API_KEY;
+              if(!key){console.log("нет ключа");process.exit(0);}
+              fetch("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC,ETH,TRX,GRAM,USDT&convert=USD",{headers:{"X-CMC_PRO_API_KEY":key}}).then(r=>r.json().then(j=>{
+                if(!r.ok){console.log("CMC HTTP",r.status,JSON.stringify(j).slice(0,200));return;}
+                ["BTC","ETH","TRX","GRAM","USDT"].forEach(s=>{const d=j.data&&j.data[s];const q=Array.isArray(d)?d[0]&&d[0].quote&&d[0].quote.USD:d&&d.quote&&d.quote.USD;console.log("  ",s,q?("$"+q.price.toFixed(2)+" ("+(q.percent_change_24h||0).toFixed(1)+"%/24ч)"):"нет");});
+              })).catch(e=>console.log("ERR",String(e&&e.cause||e).slice(0,160)));
+            ' 2>&1 | tail -8
+            echo "=== цена, зашитая в активах (value/amount) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT symbol, round(amount,4) amt, round(value) val, round(value/nullif(amount,0),2) implied_price, \"updatedAt\" FROM \"Asset\" WHERE bucket='crypto' ORDER BY value DESC;" 2>&1 | head -8
