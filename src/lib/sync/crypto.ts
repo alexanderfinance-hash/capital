@@ -165,6 +165,18 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
       await tx.wallet.update({ where: { id: f.id }, data: { balance: native, balanceUsd: usd, holdingsJson, lastSyncedAt: new Date() } });
     }
 
+    // Живые цены монет — в PriceCache (чтобы таблица не висела на сид-значениях).
+    // На оценку крипты не влияет (активы уже посчитаны по этим же ценам), но убирает
+    // устаревшие данные и годится для диагностики/будущих потребителей.
+    for (const [symbol, p] of prices as Map<string, { usd: number }>) {
+      if (!(p?.usd > 0)) continue;
+      await tx.priceCache.upsert({
+        where: { symbol },
+        update: { usd: p.usd, fetchedAt: new Date() },
+        create: { symbol, usd: p.usd, fetchedAt: new Date() },
+      });
+    }
+
     // personal per-coin synced assets (replace previous synced crypto assets)
     await tx.asset.deleteMany({ where: { source: "sync", bucket: "crypto" } });
     for (const c of coins) {
