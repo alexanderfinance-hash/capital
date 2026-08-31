@@ -289,6 +289,24 @@ model CapitalSnapshot {
   @@index([scope, capturedAt])
 }
 
+/// Посуточный снимок холдингов личного кошелька по каждой монете. Разница между
+/// соседними днями даёт журнал движений: что и сколько добавлено/выведено по
+/// кошелькам (личный контур). Пишется синком крипты (перезаписывает «сегодня»).
+model WalletDailySnapshot {
+  id       String   @id @default(cuid())
+  walletId String
+  address  String
+  chain    String
+  label    String
+  symbol   String
+  amount   Decimal  @db.Decimal(30, 8)
+  usd      Decimal  @db.Decimal(18, 2)
+  day      DateTime // UTC-полночь дня снимка
+
+  @@unique([walletId, symbol, day])
+  @@index([day])
+}
+
 /// Latest token prices in USD (CoinGecko/Binance, Stage 6).
 model PriceCache {
   symbol    String   @id // "BTC", "ETH", "TRX", "TON", "USDT"

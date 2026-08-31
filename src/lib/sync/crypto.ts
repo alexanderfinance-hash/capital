@@ -87,7 +87,7 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
 
   // 1) Fetch holdings per wallet. On a fetch failure we fall back to the last
   //    known holdings and mark the wallet `stale` so persistence skips it.
-  const fetched: { id: string; scope: string; token: string; chain: string; address: string; holdings: Holding[]; stale: boolean }[] = [];
+  const fetched: { id: string; scope: string; token: string; chain: string; address: string; label: string; holdings: Holding[]; stale: boolean }[] = [];
   const personalBySymbol = new Map<string, number>();
   const allSymbols = new Set<string>();
   for (const w of wallets) {
@@ -108,7 +108,7 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     // Обёрнутый биткоин (WBTC на Ethereum, BTCB на BSC) — это тот же биткоин 1:1,
     // сводим к BTC, чтобы везде видеть общую сумму по биткоину одной строкой.
     holdings = holdings.map((h) => ({ ...h, symbol: mergeSymbol(h.symbol) }));
-    fetched.push({ id: w.id, scope: w.scope, token: w.token, chain: w.chain, address: w.address, holdings, stale });
+    fetched.push({ id: w.id, scope: w.scope, token: w.token, chain: w.chain, address: w.address, label: w.label, holdings, stale });
     for (const h of holdings) {
       allSymbols.add(h.symbol);
       if (w.scope === "personal") personalBySymbol.set(h.symbol, (personalBySymbol.get(h.symbol) || 0) + h.amount);
@@ -163,6 +163,32 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
       const native = counted[0]?.amount ?? 0;
       const holdingsJson = counted.map((h) => ({ symbol: h.symbol, amount: h.amount, usd: usdOf(h) }));
       await tx.wallet.update({ where: { id: f.id }, data: { balance: native, balanceUsd: usd, holdingsJson, lastSyncedAt: new Date() } });
+    }
+
+    // Посуточный снимок холдингов ЛИЧНЫХ кошельков по монетам → журнал движений.
+    // Перезаписываем «сегодня» (как и capital-снимки). Для монет, которые были
+    // вчера, но пропали сегодня (полностью выведены), пишем 0 — чтобы вывод в ноль
+    // тоже попал в историю.
+    const snapDay = startOfUtcDay(new Date());
+    for (const f of fetched) {
+      if (f.scope !== "personal" || f.stale) continue;
+      const perCoin = new Map<string, number>();
+      for (const h of f.holdings) perCoin.set(h.symbol, (perCoin.get(h.symbol) || 0) + h.amount);
+      const prior = await tx.walletDailySnapshot.findMany({
+        where: { walletId: f.id, day: { lt: snapDay } },
+        orderBy: { day: "desc" },
+        distinct: ["symbol"],
+        select: { symbol: true, amount: true },
+      });
+      for (const p of prior) if (!perCoin.has(p.symbol) && Number(p.amount) > 0) perCoin.set(p.symbol, 0);
+      for (const [symbol, amount] of perCoin) {
+        const usd = amount * (prices.get(symbol)?.usd || 0);
+        await tx.walletDailySnapshot.upsert({
+          where: { walletId_symbol_day: { walletId: f.id, symbol, day: snapDay } },
+          update: { amount, usd, label: f.label, address: f.address, chain: f.chain },
+          create: { walletId: f.id, symbol, day: snapDay, amount, usd, label: f.label, address: f.address, chain: f.chain },
+        });
+      }
     }
 
     // Живые цены монет — в PriceCache (чтобы таблица не висела на сид-значениях).

@@ -109,6 +109,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     expenseWeekTxns: initial.personal.expenseWeekTxns,
     coins: initial.personal.coins.map((c) => ({ ...c })),
     cryptoWallets: initial.personal.cryptoWallets.map((w) => ({ ...w })),
+    walletHistory: initial.personal.walletHistory.map((d) => ({ ...d, movements: d.movements.map((m) => ({ ...m })) })),
     dividendsList: initial.personal.dividendsList.map((d) => ({ ...d })),
     otherInvestments: { total: initial.personal.otherInvestments.total, items: initial.personal.otherInvestments.items.map((i) => ({ ...i })) },
   }));
