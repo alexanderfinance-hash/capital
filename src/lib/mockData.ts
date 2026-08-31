@@ -42,6 +42,7 @@ export const initialStore: PersonalStore = {
   },
   expenseSubs: {},
   cryptoWallets: [],
+  walletHistory: [],
   expenseMonths: [
     { m: "Янв", v: 9100 },
     { m: "Фев", v: 8800 },

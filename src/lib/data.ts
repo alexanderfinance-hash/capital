@@ -20,7 +20,57 @@ import type {
   WalletType,
   SnapshotPoint,
   ExpenseWeek,
+  WalletHistoryDay,
+  WalletMovement,
 } from "./types";
+
+/** "YYYY-MM-DD" (UTC) для дня снимка. */
+function isoDay(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** Журнал движений по кошелькам: сравниваем посуточные снимки холдингов и берём
+ *  разницу количества монет между соседними снимками (+ приток / − отток).
+ *  Самый первый (стартовый) день пропускаем — иначе весь текущий баланс выглядел бы
+ *  как «добавлен» в момент запуска фичи. */
+function buildWalletHistory(
+  rows: { walletId: string; symbol: string; label: string; address: string; chain: string; amount: unknown; usd: unknown; day: Date }[]
+): WalletHistoryDay[] {
+  if (!rows.length) return [];
+  const bootstrap = isoDay(rows[0].day); // rows отсортированы по day asc → первый = самый ранний
+  const byKey = new Map<string, { iso: string; day: Date; amount: number; usd: number; label: string; address: string; chain: string; symbol: string }[]>();
+  for (const r of rows) {
+    const key = r.walletId + "|" + r.symbol;
+    const rec = { iso: isoDay(r.day), day: r.day, amount: Number(r.amount) || 0, usd: Number(r.usd) || 0, label: r.label, address: r.address, chain: r.chain, symbol: r.symbol };
+    (byKey.get(key) || byKey.set(key, []).get(key)!).push(rec);
+  }
+  const EPS = 1e-8;
+  const dayMap = new Map<string, { date: string; iso: string; day: Date; movements: WalletMovement[] }>();
+  for (const list of byKey.values()) {
+    for (let i = 0; i < list.length; i++) {
+      const cur = list[i];
+      if (cur.iso === bootstrap) continue;
+      const prevAmount = i > 0 ? list[i - 1].amount : 0; // нет прошлого снимка → монета появилась (с 0)
+      const dAmt = cur.amount - prevAmount;
+      if (Math.abs(dAmt) < EPS) continue;
+      const price = cur.amount > 0 ? cur.usd / cur.amount : i > 0 && list[i - 1].amount > 0 ? list[i - 1].usd / list[i - 1].amount : 0;
+      let bucket = dayMap.get(cur.iso);
+      if (!bucket) {
+        bucket = { date: dayMonthRu(cur.day), iso: cur.iso, day: cur.day, movements: [] };
+        dayMap.set(cur.iso, bucket);
+      }
+      bucket.movements.push({ symbol: cur.symbol, chain: cur.chain, label: cur.label, address: cur.address, deltaAmount: dAmt, deltaUsd: Math.round(dAmt * price) });
+    }
+  }
+  return [...dayMap.values()]
+    .sort((a, b) => b.iso.localeCompare(a.iso)) // новые сверху
+    .map((d) => ({
+      date: d.date,
+      iso: d.iso,
+      movements: d.movements.sort((a, b) => Math.abs(b.deltaUsd) - Math.abs(a.deltaUsd)),
+      netUsd: Math.round(d.movements.reduce((s, m) => s + m.deltaUsd, 0)),
+    }));
+}
 
 const num = (v: unknown): number => Number(v as never);
 
@@ -49,6 +99,7 @@ function personalFallback(): PersonalData {
     expenseWeekTxns: {},
     coins: initialStore.coins.map((c) => ({ ...c })),
     cryptoWallets: [],
+    walletHistory: [],
     personalWallets: [],
     dividendsList: initialStore.dividendsList.map((d) => ({ ...d })),
     otherInvestments: { total: 0, items: [] },
@@ -194,6 +245,10 @@ export async function getPersonalData(): Promise<PersonalData> {
       }
     }
 
+    // История движений по кошелькам: разница холдингов между соседними днями.
+    const snapRows = await prisma.walletDailySnapshot.findMany({ where: { day: { gte: historyFrom } }, orderBy: { day: "asc" } });
+    const walletHistory = buildWalletHistory(snapRows);
+
     const personalWallets = personalWalletRows.map((w) => ({
       id: w.slug ?? w.id,
       chain: w.chain as string,
@@ -233,6 +288,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       expenseWeekTxns,
       coins: coinRows.map((c) => ({ t: c.ticker, pct: c.pct })),
       cryptoWallets,
+      walletHistory,
       personalWallets,
       dividendsList,
       otherInvestments,
@@ -328,6 +384,7 @@ export function redactToExpensesOnly(d: InitialData): InitialData {
       assets: [],
       coins: [],
       cryptoWallets: [],
+      walletHistory: [],
       personalWallets: [],
       dividendsList: [],
       otherInvestments: { total: 0, items: [] },

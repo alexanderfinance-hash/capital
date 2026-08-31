@@ -127,8 +127,26 @@ export interface PersonalStore {
   expenseWeekTxns: ExpenseTxnTree; // weekEnd → parent → sub → платежи
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
+  walletHistory: WalletHistoryDay[];
   dividendsList: Dividend[];
   otherInvestments: OtherInvestments;
+}
+
+/** Одно движение монеты по кошельку за день: + добавлено / − выведено. */
+export interface WalletMovement {
+  symbol: string;
+  chain: string;
+  label: string;
+  address: string;
+  deltaAmount: number; // в монетах: + приток, − отток
+  deltaUsd: number;    // ≈ в USD по цене того дня
+}
+/** Движения по кошелькам за один день (для истории изменений капитала). */
+export interface WalletHistoryDay {
+  date: string; // "DD.MM"
+  iso: string;  // "YYYY-MM-DD"
+  movements: WalletMovement[];
+  netUsd: number; // суммарный приток/отток за день, USD
 }
 
 /* ---- Company ---- */
@@ -204,6 +222,7 @@ export interface PersonalData {
   expenseWeekTxns: ExpenseTxnTree;
   coins: CoinAlloc[];
   cryptoWallets: CryptoWalletHolding[];
+  walletHistory: WalletHistoryDay[];
   personalWallets: PersonalWalletRow[];
   dividendsList: Dividend[];
   otherInvestments: OtherInvestments;
