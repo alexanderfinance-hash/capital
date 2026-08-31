@@ -1,7 +1,6 @@
 name: Check pnl
 
-# Разовая диагностика (чтение БД + пробный синк profit): источник строк дохода
-# (profit vs dds), покрытие недель, времена последних синков.
+# Разбор роста личного капитала/крипты: снимки по дням + состав активов + цены.
 on:
   workflow_dispatch: {}
 
@@ -19,13 +18,11 @@ jobs:
           script_stop: false
           command_timeout: 4m
           script: |
-            echo "=== MonthlyIncome (period | usd | source) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period;" 2>&1 | head -20
-            echo "=== WeeklyIncome: кол-во строк + диапазон + источник ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), min(\"weekEnd\"), max(\"weekEnd\"), string_agg(DISTINCT source, ',') FROM \"WeeklyIncome\";" 2>&1 | head -5
-            echo "=== SyncState (profit/dividends/expenses) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT source, \"lastSyncedAt\", ok FROM \"SyncState\" WHERE source IN ('profit','dividends','expenses') ORDER BY source;" 2>&1 | head -5
-            echo "=== пробный синк profit (POST) ==="
-            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/profit",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,months:(j.months||[]).length,weeks:(j.weeks||[]).length,last3m:(j.months||[]).slice(-3),err:j.error}).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -3
-            echo "=== MonthlyIncome ПОСЛЕ синка ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period DESC LIMIT 8;" 2>&1 | head -10
+            echo "=== крипто-снимки по дням (макс/мин за день, посл. 40 дней) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT date_trunc('day',\"capturedAt\")::date d, round(max(value)) mx, round(min(value)) mn FROM \"CapitalSnapshot\" WHERE scope='crypto' AND \"capturedAt\" > now() - interval '40 days' GROUP BY d ORDER BY d;" 2>&1 | tail -42
+            echo "=== personal-снимки по дням (макс за день, посл. 40 дней) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT date_trunc('day',\"capturedAt\")::date d, round(max(value)) mx FROM \"CapitalSnapshot\" WHERE scope='personal' AND \"capturedAt\" > now() - interval '40 days' GROUP BY d ORDER BY d;" 2>&1 | tail -42
+            echo "=== состав активов (топ по value) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT name, symbol, round(coalesce(amount,0),4) amt, round(value) val, bucket, source, liability FROM \"Asset\" ORDER BY value DESC LIMIT 20;" 2>&1 | head -22
+            echo "=== цены монет ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT symbol, round(usd,4), \"fetchedAt\" FROM \"PriceCache\" ORDER BY symbol;" 2>&1 | head -10
