@@ -363,14 +363,6 @@ function TimelineChart({
                       onMouseEnter={() => setHover({ i })}
                       style={{ width: slotW, flex: "0 0 auto", height: "100%", position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}
                     >
-                      {/* Подпись разницы: в месячном виде — над всеми столбцами; в
-                          недельном (узкие столбцы, подписи налезали) — только над
-                          выбранным/наведённым (точное число есть в «Разница за …» и в тултипе). */}
-                      {showDiff && (!verticalLabels || here || hot) && (
-                        <span className="mono" style={{ position: "absolute", left: 0, right: 0, top: Math.max(0, PLOT_H - Math.max(expH, incH, deltaH) - 15), textAlign: "center", fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here || hot ? 1 : 0.55, pointerEvents: "none", whiteSpace: "nowrap", zIndex: here || hot ? 2 : 1 }}>
-                          {fmtVSigned(net)}
-                        </span>
-                      )}
                       {showIncome && (
                         <div style={{ width: Math.min(22, slotW * 0.3), height: `${incH.toFixed(1)}px`, background: "var(--pos)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
                       )}
@@ -391,8 +383,16 @@ function TimelineChart({
                         <div style={{ width: Math.min(22, slotW * (showIncome ? 0.3 : 0.46)), height: `${expH.toFixed(1)}px`, background: "var(--neg)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
                       ))}
                       {showDiff && (
-                        // Столбец «Разница» = |доход − расход|; знак читается по цветной подписи сверху.
-                        <div title="Разница (доход − расход)" style={{ width: Math.min(20, slotW * 0.26), height: `${deltaH.toFixed(1)}px`, background: "var(--ink-2)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
+                        // Столбец «Разница» = |доход − расход|; подпись со знаком — ровно НАД ним
+                        // (в недельном виде только у выбранного/наведённого — там столбцы узкие).
+                        <div style={{ position: "relative", height: "100%", display: "flex", alignItems: "flex-end" }}>
+                          {(!verticalLabels || here || hot) && (
+                            <span className="mono" style={{ position: "absolute", bottom: `${deltaH.toFixed(1)}px`, left: "50%", transform: "translateX(-50%)", marginBottom: 3, fontSize: 9.5, fontWeight: 600, color: net >= 0 ? "var(--pos)" : "var(--neg)", opacity: here || hot ? 1 : 0.55, pointerEvents: "none", whiteSpace: "nowrap", zIndex: here || hot ? 2 : 1 }}>
+                              {fmtVSigned(net)}
+                            </span>
+                          )}
+                          <div title="Разница (доход − расход)" style={{ width: Math.min(20, slotW * 0.26), height: `${deltaH.toFixed(1)}px`, background: "var(--ink-2)", borderRadius: "4px 4px 0 0", opacity: op, transition: "opacity .12s" }} />
+                        </div>
                       )}
                     </button>
                   );
