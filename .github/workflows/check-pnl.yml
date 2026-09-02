@@ -1,6 +1,6 @@
 name: Check pnl
 
-# Ищем во всех вкладках ДДС столбец «Ассистент»: печатаем вкладку, шапку, примеры.
+# Ищем столбец «Ассистент» в обеих таблицах (Отчет=GOOGLE_SHEETS_ID и ДДС=GOOGLE_SHEETS_DDS_ID).
 on:
   workflow_dispatch: {}
 
@@ -33,21 +33,30 @@ jobs:
               const c = creds(); if(!c){ console.log("нет creds"); return; }
               const auth = new google.auth.JWT({ email:c.client_email, key:c.private_key, scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"] });
               const sheets = google.sheets({ version:"v4", auth });
-              const id = process.env.GOOGLE_SHEETS_DDS_ID || "1fwMFtSgOUdSfmgVS3SwrYpFvwsxiPBXpL0SBVLdlaLs";
-              const meta = await sheets.spreadsheets.get({ spreadsheetId:id, fields:"sheets.properties.title" });
-              const tabs = (meta.data.sheets||[]).map(s=>s.properties.title);
-              for (const tab of tabs){
-                let rows;
-                try { const res = await sheets.spreadsheets.values.get({ spreadsheetId:id, range:`'${tab}'!A1:AF14` }); rows = res.data.values||[]; }
-                catch(e){ continue; }
-                for(let r=0;r<Math.min(rows.length,14);r++){
-                  const cells=(rows[r]||[]).map(norm);
-                  const ai=cells.findIndex(x=>x.includes("ассист"));
-                  if(ai>=0){
-                    console.log("=== TAB:", tab, "| строка шапки:", r, "| Ассистент = колонка", ai, "===");
-                    console.log("HEADER:", JSON.stringify(rows[r]));
-                    for(let k=r+1;k<Math.min(r+4,rows.length);k++) console.log("row:", JSON.stringify(rows[k]));
-                    break;
+              const ids = {
+                "ОТЧЕТ (GOOGLE_SHEETS_ID)": process.env.GOOGLE_SHEETS_ID,
+                "ДДС (GOOGLE_SHEETS_DDS_ID)": process.env.GOOGLE_SHEETS_DDS_ID || "1fwMFtSgOUdSfmgVS3SwrYpFvwsxiPBXpL0SBVLdlaLs",
+              };
+              for (const [name,id] of Object.entries(ids)){
+                if(!id){ console.log("###", name, "= НЕ ЗАДАН"); continue; }
+                console.log("###", name, "=", id);
+                let tabs=[];
+                try { const meta = await sheets.spreadsheets.get({ spreadsheetId:id, fields:"sheets.properties.title" }); tabs=(meta.data.sheets||[]).map(s=>s.properties.title); }
+                catch(e){ console.log("  ошибка доступа:", String(e&&e.message||e).slice(0,120)); continue; }
+                console.log("  tabs:", JSON.stringify(tabs));
+                for (const tab of tabs){
+                  let rows;
+                  try { const res = await sheets.spreadsheets.values.get({ spreadsheetId:id, range:`'${tab}'!A1:AJ14` }); rows=res.data.values||[]; }
+                  catch(e){ continue; }
+                  for(let r=0;r<Math.min(rows.length,14);r++){
+                    const cells=(rows[r]||[]).map(norm);
+                    const ai=cells.findIndex(x=>x.includes("ассист"));
+                    if(ai>=0){
+                      console.log("  ==> TAB:", tab, "| шапка стр.", r, "| Ассистент кол.", ai);
+                      console.log("      HEADER:", JSON.stringify(rows[r]));
+                      for(let k=r+1;k<Math.min(r+3,rows.length);k++) console.log("      row:", JSON.stringify(rows[k]));
+                      break;
+                    }
                   }
                 }
               }
@@ -56,5 +65,5 @@ jobs:
             EOF
             WD=$(docker exec capital-app-1 pwd | tr -d "\r")
             docker cp /tmp/dds.js capital-app-1:"$WD/dds_probe.js" >/dev/null 2>&1
-            docker exec -w "$WD" capital-app-1 node dds_probe.js 2>&1 | head -60
+            docker exec -w "$WD" capital-app-1 node dds_probe.js 2>&1 | head -80
             docker exec capital-app-1 rm -f "$WD/dds_probe.js" >/dev/null 2>&1 || true
