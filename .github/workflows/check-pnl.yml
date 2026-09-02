@@ -1,5 +1,6 @@
 name: Check pnl
 
+# Расход по ассистентам за 3 мес (лист «ДДС» таблицы ОТЧЕТ): сумма<0 + непустая Статья.
 on:
   workflow_dispatch: {}
 
@@ -8,7 +9,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Debug DDS over SSH
+      - name: Assistant spend over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -21,23 +22,30 @@ jobs:
             const { google } = require("googleapis");
             const fs = require("fs");
             function creds(){ const raw=process.env.GOOGLE_SERVICE_ACCOUNT_JSON; if(raw){try{return JSON.parse(raw);}catch(e){}} const p=process.env.GOOGLE_APPLICATION_CREDENTIALS; if(p){try{return JSON.parse(fs.readFileSync(p,"utf8"));}catch(e){}} return null; }
+            function parseNum(s){ let t=String(s==null?"":s).replace(/[^\d.,-]/g,"").replace(/\s/g,""); if(t.includes(",")&&!t.includes("."))t=t.replace(",","."); const n=parseFloat(t); return isNaN(n)?0:n; }
             function iso(d){ const m=String(d||"").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if(!m) return null; return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
+            const FROM="2026-06-01", TO="2026-08-31";
             (async()=>{
               const c=creds(); const auth=new google.auth.JWT({email:c.client_email,key:c.private_key,scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"]});
               const sheets=google.sheets({version:"v4",auth}); const id=process.env.GOOGLE_SHEETS_ID;
               const res=await sheets.spreadsheets.values.get({spreadsheetId:id, range:`'ДДС'!A1:K30000`});
-              const rows=res.data.values||[];
-              console.log("всего строк:", rows.length);
-              console.log("HEADER:", JSON.stringify(rows[0]));
-              console.log("последние 4 строки:");
-              for(let r=Math.max(1,rows.length-4);r<rows.length;r++) console.log("  ", JSON.stringify(rows[r]));
-              // распределение по типу (кол.10) и диапазон дат (кол.3)
-              const types=new Map(); let minI=null,maxI=null, withDate=0, jun2aug=0;
-              for(let r=1;r<rows.length;r++){ const row=rows[r]||[]; const t=String(row[10]||"").trim()||"(пусто)"; types.set(t,(types.get(t)||0)+1); const di=iso(row[3]); if(di){withDate++; if(!minI||di<minI)minI=di; if(!maxI||di>maxI)maxI=di; if(di>="2026-06-01"&&di<="2026-09-30")jun2aug++; } }
-              console.log("типы (кол.10):", JSON.stringify([...types.entries()]));
-              console.log("строк с датой:", withDate, "| диапазон:", minI, "…", maxI, "| в июне-сент:", jun2aug);
-              // пример строки за август, если есть
-              for(let r=1;r<rows.length;r++){ const di=iso((rows[r]||[])[3]); if(di&&di>="2026-08-01"&&di<="2026-08-31"){ console.log("пример авг:", JSON.stringify(rows[r])); break; } }
+              const rows=res.data.values||[]; const D=3,SUM=4,ASS=6,ST=8;
+              const by=new Map(); let grand=0,n=0,minI=null,maxI=null,noCatCnt=0,noCatSum=0;
+              for(let r=1;r<rows.length;r++){ const row=rows[r]||[];
+                const v=parseNum(row[SUM]); if(!(v<0)) continue;           // расход = отрицательная сумма
+                const di=iso(row[D]); if(!di||di<FROM||di>TO) continue;
+                const rub=Math.abs(v); const st=String(row[ST]||"").trim();
+                if(!st){ noCatCnt++; noCatSum+=rub; continue; }             // без категории — исключаем
+                const a=String(row[ASS]||"").trim()||"(ассистент не указан)";
+                const cur=by.get(a)||{sum:0,cnt:0}; cur.sum+=rub; cur.cnt++; by.set(a,cur);
+                grand+=rub; n++; if(!minI||di<minI)minI=di; if(!maxI||di>maxI)maxI=di;
+              }
+              const RATE=86.75; const f=x=>Math.round(x).toLocaleString("ru-RU");
+              console.log("окно:", minI, "…", maxI, "| строк-расходов с категорией:", n);
+              console.log("--- потратил каждый ассистент (расходы с категорией) ---");
+              [...by.entries()].sort((a,b)=>b[1].sum-a[1].sum).forEach(([a,v])=>console.log(`  ${a}: ${f(v.sum)} ₽  ≈ $${f(v.sum/RATE)}  (${v.cnt} шт)`));
+              console.log("ИТОГО:", f(grand), "₽  ≈ $"+f(grand/RATE));
+              console.log("(справочно) расходов без категории отброшено:", noCatCnt, "шт на", f(noCatSum), "₽");
             })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,300)));
             EOF
             WD=$(docker exec capital-app-1 pwd | tr -d "\r")
