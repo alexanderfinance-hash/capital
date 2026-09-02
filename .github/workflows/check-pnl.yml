@@ -1,6 +1,7 @@
 name: Check pnl
 
-# Разведка расходов: категории за 3 мес + поиск «ассист» по полям + разбивка.
+# Разведка листа ДДС: находим лист-реестр и печатаем шапку + примеры строк,
+# чтобы увидеть столбцы «Ассистент», «Статья», тип платежа, «Сумма», «Дата».
 on:
   workflow_dispatch: {}
 
@@ -9,18 +10,48 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Probe over SSH
+      - name: Probe DDS sheet over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: false
-          command_timeout: 4m
+          command_timeout: 5m
           script: |
-            echo "=== категории (Статья) за 3 мес: сумма ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT COALESCE(NULLIF(parent,''),'(без категории)') p, count(*) n, round(sum(value)) s FROM \"ExpenseTransaction\" WHERE date >= '2026-06-01' GROUP BY p ORDER BY s DESC;" 2>&1 | head -40
-            echo "=== строки со словом 'ассист' (parent/sub/comment) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT parent, sub, count(*) n, round(sum(value)) s FROM \"ExpenseTransaction\" WHERE date >= '2026-06-01' AND (parent ILIKE '%ассист%' OR sub ILIKE '%ассист%' OR comment ILIKE '%ассист%') GROUP BY parent, sub ORDER BY s DESC;" 2>&1 | head -40
-            echo "=== если есть категория про ассистентов — разбивка по подкатегориям ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT parent, sub, count(*) n, round(sum(value)) s FROM \"ExpenseTransaction\" WHERE date >= '2026-06-01' AND parent ILIKE '%ассист%' GROUP BY parent, sub ORDER BY s DESC;" 2>&1 | head -40
+            cat > /tmp/dds.js <<'EOF'
+            const { google } = require("googleapis");
+            const fs = require("fs");
+            function creds(){
+              const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+              if (raw){ try { return JSON.parse(raw); } catch(e){} }
+              const p = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+              if (p){ try { return JSON.parse(fs.readFileSync(p,"utf8")); } catch(e){} }
+              return null;
+            }
+            const norm = s => String(s||"").trim().toLowerCase();
+            (async()=>{
+              const c = creds(); if(!c){ console.log("нет creds"); return; }
+              const auth = new google.auth.JWT({ email:c.client_email, key:c.private_key, scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"] });
+              const sheets = google.sheets({ version:"v4", auth });
+              const id = process.env.GOOGLE_SHEETS_DDS_ID || "1fwMFtSgOUdSfmgVS3SwrYpFvwsxiPBXpL0SBVLdlaLs";
+              const meta = await sheets.spreadsheets.get({ spreadsheetId:id, fields:"sheets.properties.title" });
+              const tabs = (meta.data.sheets||[]).map(s=>s.properties.title);
+              console.log("tabs:", JSON.stringify(tabs));
+              const want = process.env.GOOGLE_SHEETS_DDS_TAB;
+              const list = want ? [want] : tabs;
+              for (const tab of list){
+                const res = await sheets.spreadsheets.values.get({ spreadsheetId:id, range:`'${tab}'!A1:AB40` });
+                const rows = res.data.values||[];
+                let hr=-1;
+                for(let r=0;r<Math.min(rows.length,60);r++){ const cc=(rows[r]||[]).map(norm); if(cc.includes("дата")&&cc.includes("сумма")&&cc.includes("статья")){ hr=r; break; } }
+                if(hr<0) continue;
+                console.log("=== лист-реестр:", tab, "| строка шапки:", hr, "===");
+                console.log("HEADER:", JSON.stringify(rows[hr]));
+                for(let r=hr+1;r<Math.min(hr+7,rows.length);r++) console.log("row:", JSON.stringify(rows[r]));
+                break;
+              }
+            })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,300)));
+            EOF
+            docker cp /tmp/dds.js capital-app-1:/tmp/dds.js >/dev/null 2>&1
+            docker exec capital-app-1 node /tmp/dds.js 2>&1 | head -30
