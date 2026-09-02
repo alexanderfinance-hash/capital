@@ -1,7 +1,6 @@
 name: Check pnl
 
-# Разведка листа ДДС: находим лист-реестр и печатаем шапку + примеры строк,
-# чтобы увидеть столбцы «Ассистент», «Статья», тип платежа, «Сумма», «Дата».
+# Ищем во всех вкладках ДДС столбец «Ассистент»: печатаем вкладку, шапку, примеры.
 on:
   workflow_dispatch: {}
 
@@ -10,14 +9,14 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Probe DDS sheet over SSH
+      - name: Find assistant column over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: false
-          command_timeout: 5m
+          command_timeout: 6m
           script: |
             cat > /tmp/dds.js <<'EOF'
             const { google } = require("googleapis");
@@ -37,24 +36,25 @@ jobs:
               const id = process.env.GOOGLE_SHEETS_DDS_ID || "1fwMFtSgOUdSfmgVS3SwrYpFvwsxiPBXpL0SBVLdlaLs";
               const meta = await sheets.spreadsheets.get({ spreadsheetId:id, fields:"sheets.properties.title" });
               const tabs = (meta.data.sheets||[]).map(s=>s.properties.title);
-              console.log("tabs:", JSON.stringify(tabs));
-              const want = process.env.GOOGLE_SHEETS_DDS_TAB;
-              const list = want ? [want] : tabs;
-              for (const tab of list){
-                const res = await sheets.spreadsheets.values.get({ spreadsheetId:id, range:`'${tab}'!A1:AB40` });
-                const rows = res.data.values||[];
-                let hr=-1;
-                for(let r=0;r<Math.min(rows.length,60);r++){ const cc=(rows[r]||[]).map(norm); if(cc.includes("дата")&&cc.includes("сумма")&&cc.includes("статья")){ hr=r; break; } }
-                if(hr<0) continue;
-                console.log("=== лист-реестр:", tab, "| строка шапки:", hr, "===");
-                console.log("HEADER:", JSON.stringify(rows[hr]));
-                for(let r=hr+1;r<Math.min(hr+7,rows.length);r++) console.log("row:", JSON.stringify(rows[r]));
-                break;
+              for (const tab of tabs){
+                let rows;
+                try { const res = await sheets.spreadsheets.values.get({ spreadsheetId:id, range:`'${tab}'!A1:AF14` }); rows = res.data.values||[]; }
+                catch(e){ continue; }
+                for(let r=0;r<Math.min(rows.length,14);r++){
+                  const cells=(rows[r]||[]).map(norm);
+                  const ai=cells.findIndex(x=>x.includes("ассист"));
+                  if(ai>=0){
+                    console.log("=== TAB:", tab, "| строка шапки:", r, "| Ассистент = колонка", ai, "===");
+                    console.log("HEADER:", JSON.stringify(rows[r]));
+                    for(let k=r+1;k<Math.min(r+4,rows.length);k++) console.log("row:", JSON.stringify(rows[k]));
+                    break;
+                  }
+                }
               }
+              console.log("готово");
             })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,300)));
             EOF
             WD=$(docker exec capital-app-1 pwd | tr -d "\r")
-            echo "workdir: $WD"
             docker cp /tmp/dds.js capital-app-1:"$WD/dds_probe.js" >/dev/null 2>&1
-            docker exec -w "$WD" capital-app-1 node dds_probe.js 2>&1 | head -30
+            docker exec -w "$WD" capital-app-1 node dds_probe.js 2>&1 | head -60
             docker exec capital-app-1 rm -f "$WD/dds_probe.js" >/dev/null 2>&1 || true
