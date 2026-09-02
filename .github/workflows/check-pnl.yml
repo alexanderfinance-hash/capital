@@ -53,5 +53,8 @@ jobs:
               }
             })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,300)));
             EOF
-            docker cp /tmp/dds.js capital-app-1:/tmp/dds.js >/dev/null 2>&1
-            docker exec capital-app-1 node /tmp/dds.js 2>&1 | head -30
+            WD=$(docker exec capital-app-1 pwd | tr -d "\r")
+            echo "workdir: $WD"
+            docker cp /tmp/dds.js capital-app-1:"$WD/dds_probe.js" >/dev/null 2>&1
+            docker exec -w "$WD" capital-app-1 node dds_probe.js 2>&1 | head -30
+            docker exec capital-app-1 rm -f "$WD/dds_probe.js" >/dev/null 2>&1 || true
