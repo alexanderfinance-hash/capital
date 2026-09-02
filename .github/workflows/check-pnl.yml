@@ -1,6 +1,6 @@
 name: Check pnl
 
-# Ищем столбец «Ассистент» в обеих таблицах (Отчет=GOOGLE_SHEETS_ID и ДДС=GOOGLE_SHEETS_DDS_ID).
+# Расход по ассистентам за 3 мес (лист «ДДС» таблицы ОТЧЕТ): только Расход + непустая Статья.
 on:
   workflow_dispatch: {}
 
@@ -9,7 +9,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Find assistant column over SSH
+      - name: Assistant spend over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -28,42 +28,41 @@ jobs:
               if (p){ try { return JSON.parse(fs.readFileSync(p,"utf8")); } catch(e){} }
               return null;
             }
-            const norm = s => String(s||"").trim().toLowerCase();
+            function parseNum(s){ let t=String(s==null?"":s).replace(/[^\d.,-]/g,"").replace(/\s/g,""); if(t.includes(",")&&!t.includes("."))t=t.replace(",","."); const n=parseFloat(t); return isNaN(n)?0:n; }
+            function iso(d){ const m=String(d||"").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if(!m) return null; return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
+            const FROM = "2026-06-01"; // последние 3 месяца (июнь–август 2026)
             (async()=>{
               const c = creds(); if(!c){ console.log("нет creds"); return; }
               const auth = new google.auth.JWT({ email:c.client_email, key:c.private_key, scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"] });
               const sheets = google.sheets({ version:"v4", auth });
-              const ids = {
-                "ОТЧЕТ (GOOGLE_SHEETS_ID)": process.env.GOOGLE_SHEETS_ID,
-                "ДДС (GOOGLE_SHEETS_DDS_ID)": process.env.GOOGLE_SHEETS_DDS_ID || "1fwMFtSgOUdSfmgVS3SwrYpFvwsxiPBXpL0SBVLdlaLs",
-              };
-              for (const [name,id] of Object.entries(ids)){
-                if(!id){ console.log("###", name, "= НЕ ЗАДАН"); continue; }
-                console.log("###", name, "=", id);
-                let tabs=[];
-                try { const meta = await sheets.spreadsheets.get({ spreadsheetId:id, fields:"sheets.properties.title" }); tabs=(meta.data.sheets||[]).map(s=>s.properties.title); }
-                catch(e){ console.log("  ошибка доступа:", String(e&&e.message||e).slice(0,120)); continue; }
-                console.log("  tabs:", JSON.stringify(tabs));
-                for (const tab of tabs){
-                  let rows;
-                  try { const res = await sheets.spreadsheets.values.get({ spreadsheetId:id, range:`'${tab}'!A1:AJ14` }); rows=res.data.values||[]; }
-                  catch(e){ continue; }
-                  for(let r=0;r<Math.min(rows.length,14);r++){
-                    const cells=(rows[r]||[]).map(norm);
-                    const ai=cells.findIndex(x=>x.includes("ассист"));
-                    if(ai>=0){
-                      console.log("  ==> TAB:", tab, "| шапка стр.", r, "| Ассистент кол.", ai);
-                      console.log("      HEADER:", JSON.stringify(rows[r]));
-                      for(let k=r+1;k<Math.min(r+3,rows.length);k++) console.log("      row:", JSON.stringify(rows[k]));
-                      break;
-                    }
-                  }
-                }
+              const id = process.env.GOOGLE_SHEETS_ID;
+              const res = await sheets.spreadsheets.values.get({ spreadsheetId:id, range:`'ДДС'!A1:K20000` });
+              const rows = res.data.values||[];
+              const D=3, SUM=4, ASS=6, ST=8, TYPE=10;
+              const by = new Map(); let grand=0, n=0, minIso=null, maxIso=null, noCat=0, noCatSum=0;
+              for(let r=1;r<rows.length;r++){
+                const row=rows[r]||[];
+                if(String(row[TYPE]||"").trim()!=="Расход") continue;
+                const di=iso(row[D]); if(!di||di<FROM) continue;
+                const st=String(row[ST]||"").trim();
+                const rub=Math.abs(parseNum(row[SUM])); if(!rub) continue;
+                if(!st){ noCat++; noCatSum+=rub; continue; } // без категории — исключаем по условию
+                const a=String(row[ASS]||"").trim()||"(ассистент не указан)";
+                const cur=by.get(a)||{sum:0,cnt:0}; cur.sum+=rub; cur.cnt++; by.set(a,cur);
+                grand+=rub; n++;
+                if(!minIso||di<minIso)minIso=di; if(!maxIso||di>maxIso)maxIso=di;
               }
-              console.log("готово");
+              const f=x=>Math.round(x).toLocaleString("ru-RU");
+              console.log("окно:", minIso, "…", maxIso, "| строк-расходов с категорией:", n);
+              console.log("--- расход по ассистентам (₽), только с категорией ---");
+              [...by.entries()].sort((a,b)=>b[1].sum-a[1].sum).forEach(([a,v])=>console.log(`  ${a}: ${f(v.sum)} ₽  (${v.cnt} шт)`));
+              console.log("ИТОГО с категорией:", f(grand), "₽");
+              console.log("(справочно) расходов БЕЗ категории отброшено:", noCat, "шт на", f(noCatSum), "₽");
             })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,300)));
             EOF
             WD=$(docker exec capital-app-1 pwd | tr -d "\r")
             docker cp /tmp/dds.js capital-app-1:"$WD/dds_probe.js" >/dev/null 2>&1
-            docker exec -w "$WD" capital-app-1 node dds_probe.js 2>&1 | head -80
+            docker exec -w "$WD" capital-app-1 node dds_probe.js 2>&1 | head -40
             docker exec capital-app-1 rm -f "$WD/dds_probe.js" >/dev/null 2>&1 || true
+            echo "=== текущий курс ЦБ (для перевода в \$) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT * FROM \"FxRate\" ORDER BY 1 DESC LIMIT 3;" 2>&1 | head -5
