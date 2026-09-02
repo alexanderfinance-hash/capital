@@ -1,6 +1,6 @@
 name: Check pnl
 
-# Расход по ассистентам за 3 мес (лист «ДДС» таблицы ОТЧЕТ): сумма<0 + непустая Статья.
+# Расход по ассистентам ПО МЕСЯЦАМ (июн/июл/авг 2026): сумма<0 + непустая Статья.
 on:
   workflow_dispatch: {}
 
@@ -9,7 +9,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Assistant spend over SSH
+      - name: Assistant spend by month over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -23,29 +23,27 @@ jobs:
             const fs = require("fs");
             function creds(){ const raw=process.env.GOOGLE_SERVICE_ACCOUNT_JSON; if(raw){try{return JSON.parse(raw);}catch(e){}} const p=process.env.GOOGLE_APPLICATION_CREDENTIALS; if(p){try{return JSON.parse(fs.readFileSync(p,"utf8"));}catch(e){}} return null; }
             function parseNum(s){ let t=String(s==null?"":s).replace(/[^\d.,-]/g,"").replace(/\s/g,""); if(t.includes(",")&&!t.includes("."))t=t.replace(",","."); const n=parseFloat(t); return isNaN(n)?0:n; }
-            function iso(d){ const m=String(d||"").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if(!m) return null; return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
-            const FROM="2026-06-01", TO="2026-08-31";
+            function md(d){ const m=String(d||"").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if(!m) return null; return {mo:+m[2], y:+m[3]}; }
+            const MONTHS=[6,7,8], Y=2026;
             (async()=>{
               const c=creds(); const auth=new google.auth.JWT({email:c.client_email,key:c.private_key,scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"]});
               const sheets=google.sheets({version:"v4",auth}); const id=process.env.GOOGLE_SHEETS_ID;
               const res=await sheets.spreadsheets.values.get({spreadsheetId:id, range:`'ДДС'!A1:K30000`});
               const rows=res.data.values||[]; const D=3,SUM=4,ASS=6,ST=8;
-              const by=new Map(); let grand=0,n=0,minI=null,maxI=null,noCatCnt=0,noCatSum=0;
+              const by=new Map(); const totMonth={6:0,7:0,8:0};
               for(let r=1;r<rows.length;r++){ const row=rows[r]||[];
-                const v=parseNum(row[SUM]); if(!(v<0)) continue;           // расход = отрицательная сумма
-                const di=iso(row[D]); if(!di||di<FROM||di>TO) continue;
-                const rub=Math.abs(v); const st=String(row[ST]||"").trim();
-                if(!st){ noCatCnt++; noCatSum+=rub; continue; }             // без категории — исключаем
-                const a=String(row[ASS]||"").trim()||"(ассистент не указан)";
-                const cur=by.get(a)||{sum:0,cnt:0}; cur.sum+=rub; cur.cnt++; by.set(a,cur);
-                grand+=rub; n++; if(!minI||di<minI)minI=di; if(!maxI||di>maxI)maxI=di;
+                const v=parseNum(row[SUM]); if(!(v<0)) continue;
+                const t=md(row[D]); if(!t||t.y!==Y||!MONTHS.includes(t.mo)) continue;
+                const st=String(row[ST]||"").trim(); if(!st) continue;
+                const rub=Math.abs(v); const a=String(row[ASS]||"").trim()||"(не указан)";
+                const cur=by.get(a)||{6:0,7:0,8:0,tot:0}; cur[t.mo]+=rub; cur.tot+=rub; by.set(a,cur);
+                totMonth[t.mo]+=rub;
               }
-              const RATE=86.75; const f=x=>Math.round(x).toLocaleString("ru-RU");
-              console.log("окно:", minI, "…", maxI, "| строк-расходов с категорией:", n);
-              console.log("--- потратил каждый ассистент (расходы с категорией) ---");
-              [...by.entries()].sort((a,b)=>b[1].sum-a[1].sum).forEach(([a,v])=>console.log(`  ${a}: ${f(v.sum)} ₽  ≈ $${f(v.sum/RATE)}  (${v.cnt} шт)`));
-              console.log("ИТОГО:", f(grand), "₽  ≈ $"+f(grand/RATE));
-              console.log("(справочно) расходов без категории отброшено:", noCatCnt, "шт на", f(noCatSum), "₽");
+              const f=x=>Math.round(x).toLocaleString("ru-RU");
+              console.log("=== Расход по ассистентам по месяцам, ₽ (только с категорией) ===");
+              console.log("ассистент | июнь | июль | август | ИТОГО");
+              [...by.entries()].sort((a,b)=>b[1].tot-a[1].tot).forEach(([a,v])=>console.log(`${a} | ${f(v[6])} | ${f(v[7])} | ${f(v[8])} | ${f(v.tot)}`));
+              console.log(`ВСЕГО | ${f(totMonth[6])} | ${f(totMonth[7])} | ${f(totMonth[8])} | ${f(totMonth[6]+totMonth[7]+totMonth[8])}`);
             })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,300)));
             EOF
             WD=$(docker exec capital-app-1 pwd | tr -d "\r")
