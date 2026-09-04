@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useApp } from "@/lib/store";
 import { fmt } from "@/lib/format";
 import { Badge, CategoryDonut, catColorMap, Money } from "@/lib/chart";
@@ -26,6 +26,31 @@ const fmtDate = (iso: string): string => {
   const m = (iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}.${m[2]}` : iso;
 };
+/** "2026-06-03" → "03.06.2026". */
+const fmtDateFull = (iso: string): string => {
+  const m = (iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+};
+
+// Готовые периоды для свода расходов.
+type RangeKey = "1М" | "3М" | "6М" | "1Г" | "Всё" | "custom";
+const RANGE_MONTHS: Record<string, number> = { "1М": 1, "3М": 3, "6М": 6, "1Г": 12 };
+const RANGE_LABEL: Record<RangeKey, string> = { "1М": "1 месяц", "3М": "3 месяца", "6М": "6 месяцев", "1Г": "1 год", "Всё": "Всё время", custom: "Свой период" };
+
+const periodChip = (on: boolean): CSSProperties => ({
+  padding: "5px 12px", borderRadius: 999, border: "1px solid var(--hair)", background: on ? "var(--ink)" : "transparent",
+  color: on ? "var(--surface)" : "var(--ink-2)", cursor: "pointer", fontFamily: "var(--sans)", fontSize: 12, fontWeight: on ? 600 : 400,
+});
+const dateInputStyle: CSSProperties = { marginLeft: 6, padding: "5px 8px", borderRadius: 8, border: "1px solid var(--hair)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 12 };
+
+function StatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ background: "var(--hair-2)", borderRadius: 10, padding: "12px 14px" }}>
+      <div className="k" style={{ fontSize: 9 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 20, fontWeight: 600, marginTop: 6, lineHeight: 1 }}><Money>{value}</Money></div>
+    </div>
+  );
+}
 
 /* Строка подкатегории с раскрытием до отдельных платежей (комментарий + сумма
    из ДДС). Если платежей нет — ведёт себя как раньше (просто строка). */
@@ -488,6 +513,62 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
     return (cv >= 0 ? "+" : "−") + (currency === "RUB" ? fmtRub(Math.abs(cv)) : fmt(Math.abs(cv)));
   };
 
+  // ── Свод расходов за произвольный период (пресеты / свои даты) ──
+  const [rangeKey, setRangeKey] = useState<RangeKey>("3М");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const isoOf = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  // Плоский список всех расходных операций (дата ISO + сумма + статья).
+  const flatTxns = useMemo(() => {
+    const out: { date: string; value: number; parent: string }[] = [];
+    const byPeriod = store.expenseTxns || {};
+    for (const period of Object.keys(byPeriod)) {
+      const byParent = byPeriod[period];
+      for (const parent of Object.keys(byParent)) {
+        const bySub = byParent[parent];
+        for (const sub of Object.keys(bySub)) for (const t of bySub[sub]) out.push({ date: t.date, value: t.value, parent });
+      }
+    }
+    return out;
+  }, [store.expenseTxns]);
+  const minTxnDate = useMemo(() => flatTxns.reduce((m, t) => (t.date && (!m || t.date < m) ? t.date : m), ""), [flatTxns]);
+
+  const rangeBounds = useMemo(() => {
+    const today = isoOf(new Date());
+    const to = rangeKey === "custom" ? customTo || today : today;
+    let from: string;
+    if (rangeKey === "custom") from = customFrom || minTxnDate || to;
+    else if (rangeKey === "Всё") from = minTxnDate || to;
+    else {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (RANGE_MONTHS[rangeKey] || 3));
+      d.setDate(d.getDate() + 1);
+      from = isoOf(d);
+    }
+    return { from, to };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey, customFrom, customTo, minTxnDate]);
+
+  const rangeStats = useMemo(() => {
+    const { from, to } = rangeBounds;
+    const inR = flatTxns.filter((t) => t.date && t.date >= from && t.date <= to);
+    const total = inR.reduce((s, t) => s + t.value, 0);
+    const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1);
+    const byCat = new Map<string, number>();
+    for (const t of inR) byCat.set(t.parent, (byCat.get(t.parent) || 0) + t.value);
+    const cats = [...byCat.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    return { total, count: inR.length, days, perMonth: total / (days / 30.437), perDay: total / days, cats };
+  }, [flatTxns, rangeBounds]);
+  const enterCustom = () => {
+    if (rangeKey !== "custom") {
+      setCustomFrom(customFrom || minTxnDate || isoOf(new Date()));
+      setCustomTo(customTo || isoOf(new Date()));
+    }
+    setRangeKey("custom");
+  };
+
   // Month mode
   const idx = Math.min(selIdx, lastIdx);
   const sel = months[idx];
@@ -732,6 +813,53 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Свод расходов за выбранный период (пресеты/свои даты): итого, средние, категории. */}
+        <div className="card" style={{ padding: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
+            <div className="k">Свод расходов за период</div>
+            <CurrencyToggle />
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+            {(["1М", "3М", "6М", "1Г", "Всё"] as RangeKey[]).map((k) => (
+              <button key={k} onClick={() => setRangeKey(k)} style={periodChip(rangeKey === k)}>{RANGE_LABEL[k]}</button>
+            ))}
+            <button onClick={enterCustom} style={periodChip(rangeKey === "custom")}>Свой период</button>
+          </div>
+          {rangeKey === "custom" && (
+            <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 12, color: "var(--muted)" }}>с<input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} style={dateInputStyle} /></label>
+              <label style={{ fontSize: 12, color: "var(--muted)" }}>по<input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} style={dateInputStyle} /></label>
+            </div>
+          )}
+          <div className="h-sub" style={{ marginBottom: 16 }}>
+            {fmtDateFull(rangeBounds.from)} — {fmtDateFull(rangeBounds.to)} · {rangeStats.days} дн.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: rangeStats.cats.length ? 20 : 0 }}>
+            <StatTile label="Итого расходов" value={fmtV(rangeStats.total)} />
+            <StatTile label="Средний расход в месяц" value={fmtV(rangeStats.perMonth)} />
+            <StatTile label="Средний расход в день" value={fmtV(rangeStats.perDay)} />
+            <StatTile label="Операций" value={String(rangeStats.count)} />
+          </div>
+          {rangeStats.cats.length > 0 && (
+            <div>
+              <div className="k" style={{ marginBottom: 6 }}>По категориям за период</div>
+              {rangeStats.cats.slice(0, 12).map((c) => {
+                const pct = rangeStats.total ? (c.value / rangeStats.total) * 100 : 0;
+                return (
+                  <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: catColors[c.name] || "var(--faint)", flex: "none" }} />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{c.name}</span>
+                    <span className="mono" style={{ width: 40, textAlign: "right", fontSize: 11, color: "var(--muted)" }}>{Math.round(pct)}%</span>
+                    <div style={{ width: 44, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${pct.toFixed(0)}%`, background: catColors[c.name] || "var(--neg)", borderRadius: 5 }} />
+                    </div>
+                    <span className="mono" style={{ width: 96, textAlign: "right", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}><Money>{fmtV(c.value)}</Money></span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 360px", gap: 20 }}>
           {/* Left card */}
           <div className="card" style={{ padding: 24 }}>
