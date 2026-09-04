@@ -568,6 +568,12 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
     }
     setRangeKey("custom");
   };
+  // Свод сворачиваемый (запоминаем в localStorage), по умолчанию свёрнут — чтобы не мешал.
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  useEffect(() => {
+    try { const v = localStorage.getItem("expSummaryOpen"); if (v != null) setSummaryOpen(v === "1"); } catch { /* ignore */ }
+  }, []);
+  const toggleSummary = () => setSummaryOpen((o) => { const n = !o; try { localStorage.setItem("expSummaryOpen", n ? "1" : "0"); } catch { /* ignore */ } return n; });
 
   // Month mode
   const idx = Math.min(selIdx, lastIdx);
@@ -813,50 +819,76 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        {/* Свод расходов за выбранный период (пресеты/свои даты): итого, средние, категории. */}
-        <div className="card" style={{ padding: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
-            <div className="k">Свод расходов за период</div>
-            <CurrencyToggle />
+        {/* Свод расходов за период: сворачиваемый; фреймы слева, категории справа. */}
+        <div className="card" style={{ padding: summaryOpen ? 24 : "14px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <button
+              onClick={toggleSummary}
+              title={summaryOpen ? "Свернуть" : "Развернуть"}
+              style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left", fontFamily: "inherit" }}
+            >
+              <span style={{ fontSize: 13, color: "var(--muted)", transform: summaryOpen ? "rotate(90deg)" : "none", transition: "transform .15s", flex: "none", alignSelf: "center" }}>›</span>
+              <span className="k">Свод расходов за период</span>
+              {!summaryOpen && (
+                <>
+                  <span className="mono" style={{ fontSize: 14, fontWeight: 600 }}><Money>{fmtV(rangeStats.total)}</Money></span>
+                  <span className="h-sub" style={{ padding: 0 }}>за {fmtDateFull(rangeBounds.from)} — {fmtDateFull(rangeBounds.to)}</span>
+                </>
+              )}
+            </button>
+            {summaryOpen && <CurrencyToggle />}
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-            {(["1М", "3М", "6М", "1Г", "Всё"] as RangeKey[]).map((k) => (
-              <button key={k} onClick={() => setRangeKey(k)} style={periodChip(rangeKey === k)}>{RANGE_LABEL[k]}</button>
-            ))}
-            <button onClick={enterCustom} style={periodChip(rangeKey === "custom")}>Свой период</button>
-          </div>
-          {rangeKey === "custom" && (
-            <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-              <label style={{ fontSize: 12, color: "var(--muted)" }}>с<input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} style={dateInputStyle} /></label>
-              <label style={{ fontSize: 12, color: "var(--muted)" }}>по<input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} style={dateInputStyle} /></label>
-            </div>
-          )}
-          <div className="h-sub" style={{ marginBottom: 16 }}>
-            {fmtDateFull(rangeBounds.from)} — {fmtDateFull(rangeBounds.to)} · {rangeStats.days} дн.
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: rangeStats.cats.length ? 20 : 0 }}>
-            <StatTile label="Итого расходов" value={fmtV(rangeStats.total)} />
-            <StatTile label="Средний расход в месяц" value={fmtV(rangeStats.perMonth)} />
-            <StatTile label="Средний расход в день" value={fmtV(rangeStats.perDay)} />
-            <StatTile label="Операций" value={String(rangeStats.count)} />
-          </div>
-          {rangeStats.cats.length > 0 && (
-            <div>
-              <div className="k" style={{ marginBottom: 6 }}>По категориям за период</div>
-              {rangeStats.cats.slice(0, 12).map((c) => {
-                const pct = rangeStats.total ? (c.value / rangeStats.total) * 100 : 0;
-                return (
-                  <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: catColors[c.name] || "var(--faint)", flex: "none" }} />
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{c.name}</span>
-                    <span className="mono" style={{ width: 40, textAlign: "right", fontSize: 11, color: "var(--muted)" }}>{Math.round(pct)}%</span>
-                    <div style={{ width: 44, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${pct.toFixed(0)}%`, background: catColors[c.name] || "var(--neg)", borderRadius: 5 }} />
-                    </div>
-                    <span className="mono" style={{ width: 96, textAlign: "right", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}><Money>{fmtV(c.value)}</Money></span>
-                  </div>
-                );
-              })}
+
+          {summaryOpen && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                {(["1М", "3М", "6М", "1Г", "Всё"] as RangeKey[]).map((k) => (
+                  <button key={k} onClick={() => setRangeKey(k)} style={periodChip(rangeKey === k)}>{RANGE_LABEL[k]}</button>
+                ))}
+                <button onClick={enterCustom} style={periodChip(rangeKey === "custom")}>Свой период</button>
+              </div>
+              {rangeKey === "custom" && (
+                <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)" }}>с<input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} style={dateInputStyle} /></label>
+                  <label style={{ fontSize: 12, color: "var(--muted)" }}>по<input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} style={dateInputStyle} /></label>
+                </div>
+              )}
+              <div className="h-sub" style={{ marginBottom: 16 }}>
+                {fmtDateFull(rangeBounds.from)} — {fmtDateFull(rangeBounds.to)} · {rangeStats.days} дн.
+              </div>
+
+              {/* Ключевые показатели — слева, категории с суммами — справа. */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
+                <div style={{ flexBasis: 240, flexGrow: 1, maxWidth: 300, display: "grid", gap: 10 }}>
+                  <StatTile label="Итого расходов" value={fmtV(rangeStats.total)} />
+                  <StatTile label="Средний расход в месяц" value={fmtV(rangeStats.perMonth)} />
+                  <StatTile label="Средний расход в день" value={fmtV(rangeStats.perDay)} />
+                  <StatTile label="Операций" value={String(rangeStats.count)} />
+                </div>
+                <div style={{ flexBasis: 340, flexGrow: 5, minWidth: 0 }}>
+                  {rangeStats.cats.length > 0 ? (
+                    <>
+                      <div className="k" style={{ marginBottom: 6 }}>По категориям за период</div>
+                      {rangeStats.cats.slice(0, 12).map((c) => {
+                        const pct = rangeStats.total ? (c.value / rangeStats.total) * 100 : 0;
+                        return (
+                          <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                            <span style={{ width: 9, height: 9, borderRadius: 2, background: catColors[c.name] || "var(--faint)", flex: "none" }} />
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{c.name}</span>
+                            <span className="mono" style={{ width: 40, textAlign: "right", fontSize: 11, color: "var(--muted)" }}>{Math.round(pct)}%</span>
+                            <div style={{ width: 44, height: 8, borderRadius: 5, background: "var(--hair-2)", overflow: "hidden" }}>
+                              <div style={{ height: "100%", width: `${pct.toFixed(0)}%`, background: catColors[c.name] || "var(--neg)", borderRadius: 5 }} />
+                            </div>
+                            <span className="mono" style={{ width: 96, textAlign: "right", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}><Money>{fmtV(c.value)}</Money></span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <div className="h-sub">Нет расходов за выбранный период.</div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
