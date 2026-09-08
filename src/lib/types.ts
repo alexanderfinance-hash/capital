@@ -113,6 +113,19 @@ export interface ExpenseTxn {
 /** period|weekEnd → Статья → Подстатья → платежи. */
 export type ExpenseTxnTree = Record<string, Record<string, Record<string, ExpenseTxn[]>>>;
 
+/** Полный набор агрегатов расходов (для варианта «с секретными расходами»). */
+export interface ExpensesBundle {
+  expenseCats: ExpenseCat[];
+  expenseMonths: ExpenseMonth[];
+  expenseWeeks: ExpenseWeek[];
+  expensesByPeriod: Record<string, ExpenseCat[]>;
+  expenseSubs: Record<string, Record<string, SubCat[]>>;
+  expenseWeeksByPeriod: Record<string, ExpenseCat[]>;
+  expenseWeekSubs: Record<string, Record<string, SubCat[]>>;
+  expenseTxns: ExpenseTxnTree;
+  expenseWeekTxns: ExpenseTxnTree;
+}
+
 export interface PersonalStore {
   assets: Asset[];
   flows: { expenses: FlowExpenses; dividends: FlowDividends };
@@ -130,6 +143,8 @@ export interface PersonalStore {
   walletHistory: WalletHistoryDay[];
   dividendsList: Dividend[];
   otherInvestments: OtherInvestments;
+  /** Вариант расходов с влитыми секретными тратами — только для владельца. */
+  expensesWithSecret?: ExpensesBundle;
 }
 
 /** Одно движение монеты по кошельку за день: + добавлено / − выведено. */
@@ -226,6 +241,8 @@ export interface PersonalData {
   personalWallets: PersonalWalletRow[];
   dividendsList: Dividend[];
   otherInvestments: OtherInvestments;
+  /** Вариант расходов с влитыми секретными тратами — только для владельца. */
+  expensesWithSecret?: ExpensesBundle;
   capitalHistory: SnapshotPoint[];
   cryptoHistory: SnapshotPoint[];
   tonNumberRate: TonNumberRate;

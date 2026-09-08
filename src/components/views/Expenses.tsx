@@ -487,8 +487,16 @@ function TimelineChart({
 
 export default function Expenses({ expensesOnly = false }: { expensesOnly?: boolean }) {
   const { store, usdRub, refreshExpenses, expensesSyncing } = useApp();
-  const months = store.expenseMonths;
-  const weeks = store.expenseWeeks;
+  // Секретные расходы Алекса: доступны только владельцу (у ограниченного аккаунта их
+  // в payload нет). Переключатель вливает их в расходы; выбор помнится в localStorage.
+  const hasSecret = !expensesOnly && !!store.expensesWithSecret;
+  const [secretOn, setSecretOn] = useState(false);
+  useEffect(() => { try { const v = localStorage.getItem("expSecretOn"); if (v != null) setSecretOn(v === "1"); } catch { /* ignore */ } }, []);
+  const toggleSecret = () => setSecretOn((o) => { const n = !o; try { localStorage.setItem("expSecretOn", n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  // Эффективный набор расходов: с секретом (если включён) или обычный.
+  const E = hasSecret && secretOn && store.expensesWithSecret ? store.expensesWithSecret : store;
+  const months = E.expenseMonths;
+  const weeks = E.expenseWeeks;
   const lastIdx = months.length - 1;
   const lastWeekIdx = weeks.length - 1;
 
@@ -523,7 +531,7 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
   // Плоский список всех расходных операций (дата ISO + сумма + статья).
   const flatTxns = useMemo(() => {
     const out: { date: string; value: number; parent: string }[] = [];
-    const byPeriod = store.expenseTxns || {};
+    const byPeriod = E.expenseTxns || {};
     for (const period of Object.keys(byPeriod)) {
       const byParent = byPeriod[period];
       for (const parent of Object.keys(byParent)) {
@@ -532,7 +540,7 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
       }
     }
     return out;
-  }, [store.expenseTxns]);
+  }, [E.expenseTxns]);
   const minTxnDate = useMemo(() => flatTxns.reduce((m, t) => (t.date && (!m || t.date < m) ? t.date : m), ""), [flatTxns]);
 
   const rangeBounds = useMemo(() => {
@@ -579,15 +587,15 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
   const idx = Math.min(selIdx, lastIdx);
   const sel = months[idx];
   const period = sel?.period ?? "";
-  const cats = (period && store.expensesByPeriod[period]) || store.expenseCats;
+  const cats = (period && E.expensesByPeriod[period]) || E.expenseCats;
   const maxC = Math.max(1, ...cats.map((c) => c.value));
-  const subs = (period && store.expenseSubs[period]) || {};
+  const subs = (period && E.expenseSubs[period]) || {};
 
   // Week mode
   const wIdx = Math.min(selWeekIdx, lastWeekIdx);
   const selWeek = weeks[wIdx];
-  const weekCats = (selWeek?.weekEnd && store.expenseWeeksByPeriod[selWeek.weekEnd]) || [];
-  const weekSubs = (selWeek?.weekEnd && store.expenseWeekSubs[selWeek.weekEnd]) || {};
+  const weekCats = (selWeek?.weekEnd && E.expenseWeeksByPeriod[selWeek.weekEnd]) || [];
+  const weekSubs = (selWeek?.weekEnd && E.expenseWeekSubs[selWeek.weekEnd]) || {};
   const maxWC = Math.max(1, ...weekCats.map((c) => c.value));
   const [openWeekCat, setOpenWeekCat] = useState<string | null>(null);
 
@@ -603,11 +611,11 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
         })
       );
     };
-    collect(store.expensesByPeriod);
-    collect(store.expenseWeeksByPeriod);
+    collect(E.expensesByPeriod);
+    collect(E.expenseWeeksByPeriod);
     const names = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
     return catColorMap(names);
-  }, [store.expensesByPeriod, store.expenseWeeksByPeriod]);
+  }, [E.expensesByPeriod, E.expenseWeeksByPeriod]);
 
   // Категории выбранного периода (для donut и списка-легенды).
   const activeCats = mode === "month" ? cats : weekCats;
@@ -620,15 +628,15 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
   const stackBars = useMemo(() => {
     if (mode === "month") {
       return months.map((m) => {
-        const list = (m.period && store.expensesByPeriod[m.period]) || [];
+        const list = (m.period && E.expensesByPeriod[m.period]) || [];
         return { label: m.m, cats: list, total: list.reduce((s, c) => s + c.value, 0) };
       });
     }
     return weeks.map((w) => {
-      const list = (w.weekEnd && store.expenseWeeksByPeriod[w.weekEnd]) || [];
+      const list = (w.weekEnd && E.expenseWeeksByPeriod[w.weekEnd]) || [];
       return { label: w.w, cats: list, total: list.reduce((s, c) => s + c.value, 0) };
     });
-  }, [mode, months, weeks, store.expensesByPeriod, store.expenseWeeksByPeriod]);
+  }, [mode, months, weeks, E.expensesByPeriod, E.expenseWeeksByPeriod]);
   const maxStack = Math.max(1, ...stackBars.map((b) => b.total));
   const hasStack = stackBars.some((b) => b.total > 0);
   const stackSelIdx = mode === "month" ? idx : wIdx;
@@ -654,9 +662,9 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
         label: m.m,
         expense: m.v,
         income: m.income ?? 0,
-        cats: (m.period && store.expensesByPeriod[m.period]) || [],
+        cats: (m.period && E.expensesByPeriod[m.period]) || [],
       })),
-    [months, store.expensesByPeriod]
+    [months, E.expensesByPeriod]
   );
   const weekBars: TimelineBar[] = useMemo(
     () =>
@@ -664,9 +672,9 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
         label: w.w,
         expense: w.v,
         income: w.income ?? 0,
-        cats: (w.weekEnd && store.expenseWeeksByPeriod[w.weekEnd]) || [],
+        cats: (w.weekEnd && E.expenseWeeksByPeriod[w.weekEnd]) || [],
       })),
-    [weeks, store.expenseWeeksByPeriod]
+    [weeks, E.expenseWeeksByPeriod]
   );
   const monthChartMax = Math.max(
     1,
@@ -782,6 +790,22 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
         sub="Импорт из Google Sheets"
         right={
           <>
+            {hasSecret && (
+              <button
+                onClick={toggleSecret}
+                title={secretOn ? "Скрыть секретные расходы Алекса" : "Показать секретные расходы Алекса"}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 8,
+                  border: "1px solid " + (secretOn ? "var(--ink)" : "var(--hair)"),
+                  background: secretOn ? "var(--ink)" : "var(--surface)",
+                  color: secretOn ? "var(--surface)" : "var(--muted)",
+                  cursor: "pointer", fontFamily: "var(--sans)", fontSize: 12, fontWeight: 500,
+                }}
+              >
+                <span style={{ fontSize: 12 }}>🔒</span>
+                Секретные: {secretOn ? "вкл" : "выкл"}
+              </button>
+            )}
             <button
               onClick={refreshExpenses}
               disabled={expensesSyncing}
@@ -1092,7 +1116,7 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
                                 s={s}
                                 maxS={maxS}
                                 color={catColors[cat.name] || "var(--neg)"}
-                                txns={store.expenseTxns[period]?.[cat.name]?.[s.name] || []}
+                                txns={E.expenseTxns[period]?.[cat.name]?.[s.name] || []}
                                 open={openSub === sk}
                                 onToggle={() => setOpenSub(openSub === sk ? null : sk)}
                                 fmtV={fmtV}
@@ -1144,7 +1168,7 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
                                 s={s}
                                 maxS={maxS}
                                 color={catColors[cat.name] || "var(--neg)"}
-                                txns={store.expenseWeekTxns[selWeek?.weekEnd ?? ""]?.[cat.name]?.[s.name] || []}
+                                txns={E.expenseWeekTxns[selWeek?.weekEnd ?? ""]?.[cat.name]?.[s.name] || []}
                                 open={openWeekSub === sk}
                                 onToggle={() => setOpenWeekSub(openWeekSub === sk ? null : sk)}
                                 fmtV={fmtV}

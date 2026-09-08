@@ -307,6 +307,21 @@ model WalletDailySnapshot {
   @@index([day])
 }
 
+/// Секретные личные расходы Алекса (из ОТДЕЛЬНОЙ Google-таблицы, доступ к которой
+/// есть только у него + сервис-аккаунта). Хранятся как сырые платежи; в дашборде
+/// вливаются в расходы ТОЛЬКО в учётке владельца и только при включённом
+/// переключателе (ограниченный аккаунт «расходы» их не получает вовсе).
+model SecretExpenseTxn {
+  id      String  @id @default(cuid())
+  date    String  // "YYYY-MM-DD"
+  parent  String  // Статья
+  sub     String  // Подстатья
+  comment String
+  value   Decimal @db.Decimal(18, 2) // USD (₽→$ по курсу ЦБ)
+
+  @@index([date])
+}
+
 /// Latest token prices in USD (CoinGecko/Binance, Stage 6).
 model PriceCache {
   symbol    String   @id // "BTC", "ETH", "TRX", "TON", "USDT"
