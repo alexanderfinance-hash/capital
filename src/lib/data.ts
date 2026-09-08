@@ -7,6 +7,7 @@ import { initialStore, WALLETS, AGENCIES, HISTORY, DEFAULT_RESERVES, CHARTS } fr
 import { relativeRu, daysAgoRu, dayMonthRu } from "./time";
 import { getCurrentUsdRub, fallbackRate } from "./fx";
 import { SUPPLEMENTAL_WEEKLY_INCOME, SUPPLEMENTAL_MONTHLY_INCOME } from "./supplementalIncome";
+import { mergeSecret } from "./secretExpenses";
 import type {
   InitialData,
   PersonalData,
@@ -274,8 +275,17 @@ export async function getPersonalData(): Promise<PersonalData> {
       items: [...investAgg.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
     };
 
+    // Секретные расходы Алекса: строим ВТОРОЙ набор агрегатов (с влитыми секретами).
+    // Уходит только владельцу; ограниченный аккаунт «расходы» его не получает (redact).
+    const secretRows = await prisma.secretExpenseTxn.findMany();
+    const publicBundle = { expenseCats, expenseMonths: months, expenseWeeks, expensesByPeriod, expenseSubs, expenseWeeksByPeriod, expenseWeekSubs, expenseTxns, expenseWeekTxns };
+    const expensesWithSecret = secretRows.length
+      ? mergeSecret(publicBundle, secretRows.map((s) => ({ date: s.date, parent: s.parent, sub: s.sub, comment: s.comment, value: num(s.value) })))
+      : undefined;
+
     return {
       assets,
+      expensesWithSecret,
       flows: { expenses: { value: lastV, delta: expensesDelta }, dividends: { value: dividendsTotal } },
       expenseCats,
       expensesByPeriod,
@@ -380,6 +390,8 @@ export function redactToExpensesOnly(d: InitialData): InitialData {
       // Расходы — как есть, но доход по месяцам/неделям вырезаем.
       expenseMonths: d.personal.expenseMonths.map((m) => ({ ...m, income: 0 })),
       expenseWeeks: d.personal.expenseWeeks.map((w) => ({ ...w, income: 0 })),
+      // Секретные расходы Алекса ограниченному аккаунту не отдаём вовсе.
+      expensesWithSecret: undefined,
       // Прочее личное — пусто.
       assets: [],
       coins: [],

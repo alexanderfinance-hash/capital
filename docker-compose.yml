@@ -45,6 +45,11 @@ services:
       GOOGLE_SHEETS_EXPENSES_TAB: "${GOOGLE_SHEETS_EXPENSES_TAB:-Отчет}"
       GOOGLE_SHEETS_CATEGORIES_TAB: "${GOOGLE_SHEETS_CATEGORIES_TAB:-Категории }"
       GOOGLE_SERVICE_ACCOUNT_JSON: "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
+      # Секретные расходы Алекса — ОТДЕЛЬНАЯ Google-таблица (доступ только у него +
+      # сервис-аккаунта). Пусто → фича отключена. Вкладка авто-определяется по колонкам
+      # Дата/Сумма/Статья (переопределяется GOOGLE_SHEETS_SECRET_TAB).
+      GOOGLE_SHEETS_SECRET_ID: "${GOOGLE_SHEETS_SECRET_ID:-}"
+      GOOGLE_SHEETS_SECRET_TAB: "${GOOGLE_SHEETS_SECRET_TAB:-}"
       FX_USD_RUB: "${FX_USD_RUB:-95}"
       EXPENSE_EXCLUDE: "${EXPENSE_EXCLUDE:-Снятие наличных,Обналичивание крипты}"
       CMC_API_KEY: "${CMC_API_KEY:-}"
