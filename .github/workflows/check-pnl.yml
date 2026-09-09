@@ -8,41 +8,29 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Probe secret sheet over SSH
+      - name: Wire secret sheet + sync over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: false
-          command_timeout: 4m
+          command_timeout: 8m
           script: |
-            cat > /tmp/sec.js <<'EOF'
-            const { google } = require("googleapis");
-            const fs = require("fs");
-            function creds(){ const raw=process.env.GOOGLE_SERVICE_ACCOUNT_JSON; if(raw){try{return JSON.parse(raw);}catch(e){}} const p=process.env.GOOGLE_APPLICATION_CREDENTIALS; if(p){try{return JSON.parse(fs.readFileSync(p,"utf8"));}catch(e){}} return null; }
-            const norm = s => String(s||"").trim().toLowerCase();
-            (async()=>{
-              const c=creds(); const auth=new google.auth.JWT({email:c.client_email,key:c.private_key,scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"]});
-              const sheets=google.sheets({version:"v4",auth});
-              const id="1g3YPHFe1gAfZg4PxiwCgsZU6kmYzQe-5ka5J8Me2HJI";
-              let tabs=[];
-              try { const meta=await sheets.spreadsheets.get({spreadsheetId:id, fields:"sheets.properties.title"}); tabs=(meta.data.sheets||[]).map(s=>s.properties.title); }
-              catch(e){ console.log("НЕТ ДОСТУПА / ошибка:", String(e&&e.message||e).slice(0,180)); return; }
-              console.log("ДОСТУП ЕСТЬ. Вкладки:", JSON.stringify(tabs));
-              for(const tab of tabs){
-                const res=await sheets.spreadsheets.values.get({spreadsheetId:id, range:`'${tab}'!A1:N30`});
-                const rows=res.data.values||[];
-                let hr=-1;
-                for(let r=0;r<Math.min(rows.length,40);r++){ const cc=(rows[r]||[]).map(norm); if(cc.includes("дата")&&cc.includes("сумма")&&cc.includes("статья")){hr=r;break;} }
-                if(hr<0){ console.log("  вкладка", tab, "— НЕТ колонок Дата/Сумма/Статья (строк:", rows.length, ")"); continue; }
-                console.log("  ==> лист-реестр:", tab, "| шапка стр.", hr);
-                console.log("      HEADER:", JSON.stringify(rows[hr]));
-                for(let k=hr+1;k<Math.min(hr+5,rows.length);k++) console.log("      row:", JSON.stringify(rows[k]));
-              }
-            })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,220)));
-            EOF
-            WD=$(docker exec capital-app-1 pwd | tr -d "\r")
-            docker cp /tmp/sec.js capital-app-1:"$WD/sec_probe.js" >/dev/null 2>&1
-            docker exec -w "$WD" capital-app-1 node sec_probe.js 2>&1 | head -40
-            docker exec capital-app-1 rm -f "$WD/sec_probe.js" >/dev/null 2>&1 || true
+            cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
+            ID="1g3YPHFe1gAfZg4PxiwCgsZU6kmYzQe-5ka5J8Me2HJI"
+            echo "=== вписываю GOOGLE_SHEETS_SECRET_ID в .env ==="
+            if grep -q '^GOOGLE_SHEETS_SECRET_ID=' .env; then
+              sed -i "s|^GOOGLE_SHEETS_SECRET_ID=.*|GOOGLE_SHEETS_SECRET_ID=\"$ID\"|" .env
+            else
+              printf 'GOOGLE_SHEETS_SECRET_ID="%s"\n' "$ID" >> .env
+            fi
+            echo "в .env: $(grep -q '^GOOGLE_SHEETS_SECRET_ID=' .env && echo да || echo нет)"
+            echo "=== пересоздаю app+worker ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app worker 2>&1 | tail -6
+            sleep 12
+            echo "=== синк секретных расходов ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/secret-expenses",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify(j))).catch(e=>console.log("ERR",String(e).slice(0,160)))' 2>&1 | tail -3
+            echo "=== SecretExpenseTxn: строк + сумма USD + по статьям ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), round(sum(value)) FROM \"SecretExpenseTxn\";" 2>&1 | head -2
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT parent, round(sum(value)) usd, count(*) FROM \"SecretExpenseTxn\" GROUP BY parent ORDER BY 2 DESC LIMIT 10;" 2>&1 | head -12
