@@ -1,7 +1,5 @@
 name: Check pnl
 
-# Разовая диагностика (чтение БД + пробный синк profit): источник строк дохода
-# (profit vs dds), покрытие недель, времена последних синков.
 on:
   workflow_dispatch: {}
 
@@ -10,22 +8,31 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Probe over SSH
+      - name: Enable reclassify + resync over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: false
-          command_timeout: 4m
+          command_timeout: 8m
           script: |
-            echo "=== MonthlyIncome (period | usd | source) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period;" 2>&1 | head -20
-            echo "=== WeeklyIncome: кол-во строк + диапазон + источник ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), min(\"weekEnd\"), max(\"weekEnd\"), string_agg(DISTINCT source, ',') FROM \"WeeklyIncome\";" 2>&1 | head -5
-            echo "=== SyncState (profit/dividends/expenses) ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT source, \"lastSyncedAt\", ok FROM \"SyncState\" WHERE source IN ('profit','dividends','expenses') ORDER BY source;" 2>&1 | head -5
-            echo "=== пробный синк profit (POST) ==="
-            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/profit",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,months:(j.months||[]).length,weeks:(j.weeks||[]).length,last3m:(j.months||[]).slice(-3),err:j.error}).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -3
-            echo "=== MonthlyIncome ПОСЛЕ синка ==="
-            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period DESC LIMIT 8;" 2>&1 | head -10
+            cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
+            echo "=== включаю EXPENSE_RECLASSIFY_INVESTMENTS=true в .env ==="
+            if grep -q '^EXPENSE_RECLASSIFY_INVESTMENTS=' .env; then
+              sed -i 's|^EXPENSE_RECLASSIFY_INVESTMENTS=.*|EXPENSE_RECLASSIFY_INVESTMENTS="true"|' .env
+            else
+              printf 'EXPENSE_RECLASSIFY_INVESTMENTS="true"\n' >> .env
+            fi
+            echo "в .env: $(grep '^EXPENSE_RECLASSIFY_INVESTMENTS=' .env)"
+            echo "=== пересоздаю app+worker ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app worker 2>&1 | tail -6
+            sleep 12
+            echo "=== проверка env в контейнере ==="
+            docker exec capital-app-1 node -e 'console.log("reclassify =", process.env.EXPENSE_RECLASSIFY_INVESTMENTS, "| list =", process.env.EXPENSE_AS_INVESTMENT)'
+            echo "=== пересинк расходов ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/expenses",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,latest:j.latestPeriod,reclass:j.investmentsReclassified,err:j.error}))).catch(e=>console.log("ERR",String(e).slice(0,160)))' 2>&1 | tail -3
+            echo "=== Коучи в расходах (должно стать пусто) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), round(coalesce(sum(value),0)) FROM \"ExpenseTransaction\" WHERE sub ILIKE '%коуч%' OR sub ILIKE '%наставн%';" 2>&1 | head -2
+            echo "=== теперь в OtherInvestment (инвестиции) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT parent, name, round(value) usd FROM \"OtherInvestment\" ORDER BY value DESC LIMIT 6;" 2>&1 | head -8
