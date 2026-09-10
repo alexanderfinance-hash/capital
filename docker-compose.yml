@@ -52,6 +52,10 @@ services:
       GOOGLE_SHEETS_SECRET_TAB: "${GOOGLE_SHEETS_SECRET_TAB:-}"
       FX_USD_RUB: "${FX_USD_RUB:-95}"
       EXPENSE_EXCLUDE: "${EXPENSE_EXCLUDE:-Снятие наличных,Обналичивание крипты}"
+      # Переносить наставничество/коучей из расходов в «Инвестиции» (по договорённости
+      # с Алексом — эти траты не должны попадать в отчёт расходов).
+      EXPENSE_RECLASSIFY_INVESTMENTS: "${EXPENSE_RECLASSIFY_INVESTMENTS:-false}"
+      EXPENSE_AS_INVESTMENT: '${EXPENSE_AS_INVESTMENT:-Коучи\преподаватели\наставники}'
       CMC_API_KEY: "${CMC_API_KEY:-}"
       EVM_RPC_URL: "${EVM_RPC_URL:-}"
       BSC_RPC_URL: "${BSC_RPC_URL:-}"
