@@ -1,5 +1,7 @@
 name: Check pnl
 
+# Разовая диагностика (чтение БД + пробный синк profit): источник строк дохода
+# (profit vs dds), покрытие недель, времена последних синков.
 on:
   workflow_dispatch: {}
 
@@ -8,7 +10,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Weekly RUB report over SSH
+      - name: Probe over SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -17,36 +19,13 @@ jobs:
           script_stop: false
           command_timeout: 4m
           script: |
-            cat > /tmp/wk.js <<'EOF'
-            const { google } = require("googleapis");
-            const fs = require("fs");
-            function creds(){ const raw=process.env.GOOGLE_SERVICE_ACCOUNT_JSON; if(raw){try{return JSON.parse(raw);}catch(e){}} const p=process.env.GOOGLE_APPLICATION_CREDENTIALS; if(p){try{return JSON.parse(fs.readFileSync(p,"utf8"));}catch(e){}} return null; }
-            function num(s){ let t=String(s==null?"":s).replace(/[^\d.,-]/g,"").replace(/\s/g,""); if(t.includes(",")&&!t.includes("."))t=t.replace(",","."); const n=parseFloat(t); return isNaN(n)?0:n; }
-            function iso(d){ const m=String(d||"").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if(!m) return null; return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
-            const FROM="2026-09-07", TO="2026-09-13";
-            const EXCLUDE=new Set(["Снятие наличных","Обналичивание крипты"]);
-            const RECLASS=new Set(["Коучи\\преподаватели\\наставники"]);
-            (async()=>{
-              const c=creds(); const auth=new google.auth.JWT({email:c.client_email,key:c.private_key,scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"]});
-              const sheets=google.sheets({version:"v4",auth}); const id=process.env.GOOGLE_SHEETS_ID;
-              const res=await sheets.spreadsheets.values.get({spreadsheetId:id, range:`'ДДС'!A1:K30000`});
-              const rows=res.data.values||[]; const D=3,SUM=4,ST=8,SUB=9;
-              const cats=new Map(); let total=0;
-              for(let r=1;r<rows.length;r++){ const row=rows[r]||[];
-                const v=num(row[SUM]); if(!(v<0)) continue;
-                const di=iso(row[D]); if(!di||di<FROM||di>TO) continue;
-                const st=(row[ST]||"").trim(); if(!st||EXCLUDE.has(st)) continue;
-                const sub=(row[SUB]||"").trim()||st; if(RECLASS.has(sub)) continue;
-                const rub=Math.abs(v); total+=rub;
-                const cur=cats.get(st)||{sum:0,subs:new Map()}; cur.sum+=rub; cur.subs.set(sub,(cur.subs.get(sub)||0)+rub); cats.set(st,cur);
-              }
-              const f=x=>Math.round(x).toLocaleString("ru-RU");
-              console.log("ИТОГО расходов 07.09-13.09:", f(total), "руб.");
-              const sorted=[...cats.entries()].sort((a,b)=>b[1].sum-a[1].sum);
-              sorted.forEach(([name,v],i)=>{ const pct=Math.round(v.sum/total*100); const top=[...v.subs.entries()].sort((a,b)=>b[1]-a[1])[0]; console.log(`${i+1}. ${pct}% | ${name} | ${f(v.sum)} руб. | топ-подстатья: ${top[0]} = ${f(top[1])} руб.`); });
-            })().catch(e=>console.log("ERR", String(e&&e.message||e).slice(0,220)));
-            EOF
-            WD=$(docker exec capital-app-1 pwd | tr -d "\r")
-            docker cp /tmp/wk.js capital-app-1:"$WD/wk_probe.js" >/dev/null 2>&1
-            docker exec -w "$WD" capital-app-1 node wk_probe.js 2>&1 | head -30
-            docker exec capital-app-1 rm -f "$WD/wk_probe.js" >/dev/null 2>&1 || true
+            echo "=== MonthlyIncome (period | usd | source) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period;" 2>&1 | head -20
+            echo "=== WeeklyIncome: кол-во строк + диапазон + источник ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT count(*), min(\"weekEnd\"), max(\"weekEnd\"), string_agg(DISTINCT source, ',') FROM \"WeeklyIncome\";" 2>&1 | head -5
+            echo "=== SyncState (profit/dividends/expenses) ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT source, \"lastSyncedAt\", ok FROM \"SyncState\" WHERE source IN ('profit','dividends','expenses') ORDER BY source;" 2>&1 | head -5
+            echo "=== пробный синк profit (POST) ==="
+            docker exec capital-app-1 node -e 'fetch("http://localhost:3000/api/sync/profit",{method:"POST",headers:{"x-cron-key":process.env.CRON_SECRET}}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,months:(j.months||[]).length,weeks:(j.weeks||[]).length,last3m:(j.months||[]).slice(-3),err:j.error}).slice(0,600))).catch(e=>console.log("ERR",String(e).slice(0,150)))' 2>&1 | tail -3
+            echo "=== MonthlyIncome ПОСЛЕ синка ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT period, usd, source FROM \"MonthlyIncome\" ORDER BY period DESC LIMIT 8;" 2>&1 | head -10
