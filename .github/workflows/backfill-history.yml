@@ -1,0 +1,40 @@
+name: Backfill coin history
+
+# Одноразовый (повторяемый) бэкфилл посуточной истории холдингов кошельков
+# (WalletDailySnapshot) за прошлые дни — чтобы график «по монетам» показывал
+# реальную историю. Запускается вручную; идемпотентен (существующие дни не трогает).
+# Требует, чтобы код бэкфилла уже был задеплоен на сервере (роут /api/sync/backfill-history).
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "За сколько дней назад восстанавливать"
+        required: false
+        default: "200"
+
+jobs:
+  backfill:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run backfill over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 25m
+          envs: DAYS
+          script: |
+            DAYS="${{ github.event.inputs.days || '200' }}"
+            echo "=== backfill за $DAYS дней ==="
+            docker exec capital-app-1 node -e '
+              const days = process.env.DAYS || "200";
+              fetch("http://localhost:3000/api/sync/backfill-history?days="+days, { method:"POST", headers:{ "x-cron-key": process.env.CRON_SECRET } })
+                .then(r => r.json())
+                .then(j => console.log(JSON.stringify(j, null, 2).slice(0, 4000)))
+                .catch(e => console.log("ERR", String(e).slice(0, 300)));
+            ' 2>&1 | tail -120
+            echo "=== охват WalletDailySnapshot после бэкфилла ==="
+            docker exec capital-db-1 psql -U capital -d capital -tA -F' | ' -c "SELECT symbol, count(*), min(day), max(day) FROM \"WalletDailySnapshot\" GROUP BY symbol ORDER BY 2 DESC;" 2>&1 | head -30

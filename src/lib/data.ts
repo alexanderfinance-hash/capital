@@ -20,10 +20,47 @@ import type {
   WalletGroup,
   WalletType,
   SnapshotPoint,
+  CoinSeries,
   ExpenseWeek,
   WalletHistoryDay,
   WalletMovement,
 } from "./types";
+
+/** Отображаемые имена позиций портфеля для графика по монетам. */
+const COIN_SERIES_NAME: Record<string, string> = {
+  BTC: "Bitcoin",
+  ETH: "Ethereum",
+  TRX: "Tron",
+  TON: "Toncoin",
+  USDT: "USDT",
+  USDC: "USDC",
+  TONNUM: "TON номера",
+};
+
+/** Посуточная стоимость (USD) по каждой позиции из снимков холдингов кошельков
+ *  (+ синтетический ряд TON-номеров). Суммируем usd по (символ, день); дни
+ *  сортируем по возрастанию. Ряды — по убыванию последней стоимости. */
+function buildCoinSeries(
+  rows: { symbol: string; usd: unknown; day: Date }[]
+): CoinSeries[] {
+  const bySym = new Map<string, Map<string, { day: Date; usd: number }>>();
+  for (const r of rows) {
+    const iso = isoDay(r.day);
+    const perDay = bySym.get(r.symbol) ?? bySym.set(r.symbol, new Map()).get(r.symbol)!;
+    const cur = perDay.get(iso);
+    // Несколько кошельков в один день по одной монете → суммируем.
+    if (cur) cur.usd += Number(r.usd) || 0;
+    else perDay.set(iso, { day: r.day, usd: Number(r.usd) || 0 });
+  }
+  const series: CoinSeries[] = [];
+  for (const [symbol, perDay] of bySym) {
+    const points = [...perDay.values()]
+      .sort((a, b) => a.day.getTime() - b.day.getTime())
+      .map((p) => ({ t: p.day.toISOString(), label: dayMonthRu(p.day), value: Math.round(p.usd) }));
+    series.push({ symbol, name: COIN_SERIES_NAME[symbol] || symbol, points });
+  }
+  return series.sort((a, b) => (b.points.at(-1)?.value ?? 0) - (a.points.at(-1)?.value ?? 0));
+}
 
 /** "YYYY-MM-DD" (UTC) для дня снимка. */
 function isoDay(d: Date): string {
@@ -106,6 +143,7 @@ function personalFallback(): PersonalData {
     otherInvestments: { total: 0, items: [] },
     capitalHistory: fallbackHistory(CHARTS["Г"].v),
     cryptoHistory: fallbackHistory(CHARTS["6М"].v),
+    coinSeries: [],
     tonNumberRate: { usd: 0, synced: "ожидает синхронизации", staleDays: -1 },
     usdRub: fallbackRate(),
     synced: "Обновлено только что",
@@ -247,8 +285,12 @@ export async function getPersonalData(): Promise<PersonalData> {
     }
 
     // История движений по кошелькам: разница холдингов между соседними днями.
+    // TON-номера (синтетический ряд) в движения не попадают — их количество меняется
+    // вручную, а не притоком/оттоком по адресу.
     const snapRows = await prisma.walletDailySnapshot.findMany({ where: { day: { gte: historyFrom } }, orderBy: { day: "asc" } });
-    const walletHistory = buildWalletHistory(snapRows);
+    const walletHistory = buildWalletHistory(snapRows.filter((r) => r.symbol !== "TONNUM"));
+    // Ряды стоимости по каждой монете + TON-номера (для графика «по монете / выбранным»).
+    const coinSeries = buildCoinSeries(snapRows);
 
     const personalWallets = personalWalletRows.map((w) => ({
       id: w.slug ?? w.id,
@@ -304,6 +346,7 @@ export async function getPersonalData(): Promise<PersonalData> {
       otherInvestments,
       capitalHistory: toPoints(capitalSnaps),
       cryptoHistory: toPoints(cryptoSnaps),
+      coinSeries,
       tonNumberRate: {
         usd: tonnumPrice ? num(tonnumPrice.usd) : 0,
         synced: relativeRu(tonnumSync?.lastSyncedAt ?? null),
@@ -402,6 +445,7 @@ export function redactToExpensesOnly(d: InitialData): InitialData {
       otherInvestments: { total: 0, items: [] },
       capitalHistory: [],
       cryptoHistory: [],
+      coinSeries: [],
       flows: { expenses: { ...d.personal.flows.expenses }, dividends: { value: 0 } },
       tonNumberRate: { usd: 0, synced: "", staleDays: -1 },
       // usdRub оставляем (нужен для переключателя $/₽ в расходах).

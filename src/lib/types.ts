@@ -82,6 +82,14 @@ export interface SnapshotPoint {
   value: number;
 }
 
+/** Посуточная стоимость (USD) одной позиции портфеля — монета или TON-номера.
+ *  Клиент суммирует выбранные ряды и строит график «по монете / по выбранным». */
+export interface CoinSeries {
+  symbol: string; // "BTC", "USDT", "TONNUM", …
+  name: string; // отображаемое имя
+  points: SnapshotPoint[];
+}
+
 export interface CryptoWalletHolding {
   symbol: string;
   chain: string;
@@ -245,6 +253,7 @@ export interface PersonalData {
   expensesWithSecret?: ExpensesBundle;
   capitalHistory: SnapshotPoint[];
   cryptoHistory: SnapshotPoint[];
+  coinSeries: CoinSeries[]; // посуточная стоимость по каждой монете + TON-номера
   tonNumberRate: TonNumberRate;
   usdRub: number; // current USD→RUB rate (RUB per 1 USD), for RUB asset entry/display
   synced: string;

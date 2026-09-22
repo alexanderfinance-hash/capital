@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { DEFAULT_RESERVES } from "./mockData";
-import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow, SnapshotPoint, CompanyPayable, TonNumberRate } from "./types";
+import type { Asset, Dividend, PersonalStore, Agency, Reserves, HistoryPoint, Wallet, InitialData, PersonalWalletRow, SnapshotPoint, CoinSeries, CompanyPayable, TonNumberRate } from "./types";
 
 export type CompanyLayout = "dash" | "calc" | "report";
 export interface OpenGroups {
@@ -28,6 +28,7 @@ interface AppState {
   personalTotal: number;
   capitalHistory: SnapshotPoint[];
   cryptoHistory: SnapshotPoint[];
+  coinSeries: CoinSeries[];
   addAsset: (a: Omit<Asset, "id">) => void;
   addDividend: (d: Dividend) => void;
   deleteAsset: (id: string) => void;
@@ -120,6 +121,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const [personalWallets, setPersonalWallets] = useState<PersonalWalletRow[]>(initial.personal.personalWallets.map((w) => ({ ...w })));
   const [capitalHistory] = useState<SnapshotPoint[]>(initial.personal.capitalHistory.map((p) => ({ ...p })));
   const [cryptoHistory] = useState<SnapshotPoint[]>(initial.personal.cryptoHistory.map((p) => ({ ...p })));
+  const [coinSeries] = useState<CoinSeries[]>(initial.personal.coinSeries.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p })) })));
   const [tonNumberRate] = useState<TonNumberRate>({ ...initial.personal.tonNumberRate });
   const [usdRub] = useState<number>(initial.personal.usdRub);
 
@@ -392,6 +394,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     personalTotal,
     capitalHistory,
     cryptoHistory,
+    coinSeries,
     addAsset,
     addDividend,
     deleteAsset,

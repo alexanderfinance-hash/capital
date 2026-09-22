@@ -11,9 +11,10 @@
  * blocked in this sandbox).
  *
  * Configuration (all optional — sensible defaults if empty):
- *   TONNUM_PRICE_USD     hard override in USD per number (skips the network)
- *   NUMS888_URL          page to read (default https://nums888.io/)
- *   NUMS888_PRICE_REGEX  regex with ONE capture group for the USD figure
+ *   TONNUM_PRICE_USD        hard override in USD per number (skips the network)
+ *   NUMS888_URL             page to read (default https://nums888.io/)
+ *   NUMS888_PRICE_REGEX     regex with ONE capture group for the USD figure
+ *   NUMS888_CHANGE24H_REGEX regex with ONE capture group for the 24h % change
  */
 import "server-only";
 
@@ -23,6 +24,12 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 // A dollar amount: "$2788.50", "$2,788.50", "$ 2788". Thousands separators
 // (comma / space / nbsp — \s covers nbsp) are stripped in parseNumber().
 const DEFAULT_PRICE_RE = /\$\s*([0-9][0-9.,\s]*)/;
+
+// The page shows the floor change right under the price: "24h -2.99%  7d -8.08%
+// 30d +15.41%". We grab the SIGNED percent that follows the first "24h" (the
+// explicit +/- sign discriminates it from "24h Volume 303,565", which has no
+// sign or % after it). Falls back to null if the block isn't in the HTML.
+const DEFAULT_CHANGE24H_RE = /24h[\s\S]{0,60}?([+-]\d+(?:[.,]\d+)?)\s*%/i;
 
 export interface TonNumberRate {
   usd: number; // price of one anonymous number in USD
@@ -60,5 +67,15 @@ export async function fetchTonNumberRate(): Promise<TonNumberRate> {
   const usd = parseNumber(m[1]);
   if (!isFinite(usd) || usd <= 0) throw new Error("nums888 bad price: " + JSON.stringify(m[1]));
 
-  return { usd, ton: null, change24h: null, source: "nums888", debug: `title=${JSON.stringify(title.slice(0, 60))}` };
+  // 24h change straight from the page (matches what the user sees). Not fatal if
+  // absent — the sync then derives a daily delta from its own price anchor.
+  const chRe = process.env.NUMS888_CHANGE24H_REGEX ? new RegExp(process.env.NUMS888_CHANGE24H_REGEX, "i") : DEFAULT_CHANGE24H_RE;
+  const cm = body.match(chRe);
+  let change24h: number | null = null;
+  if (cm && cm[1]) {
+    const c = Number(cm[1].replace(",", "."));
+    if (isFinite(c)) change24h = c;
+  }
+
+  return { usd, ton: null, change24h, source: "nums888", debug: `title=${JSON.stringify(title.slice(0, 60))} ch24=${change24h}` };
 }
