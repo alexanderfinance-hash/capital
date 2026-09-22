@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { fmt, fmtK } from "./format";
-import type { Asset, HistoryPoint, SnapshotPoint } from "./types";
+import type { Asset, HistoryPoint, SnapshotPoint, CoinSeries } from "./types";
 
 /* ===== Real-history series (PRD §6) ===== */
 const PERIOD_DAYS: Record<string, number> = { "1Н": 7, "1М": 31, "3М": 92, "6М": 184, "1Г": 366 };
@@ -40,6 +40,38 @@ export function seriesForPeriod(points: SnapshotPoint[], period: string): Series
   const deltaAbs = last - first;
   const deltaPct = first ? +((deltaAbs / first) * 100).toFixed(1) : 0;
   return { vals, labels, points: fullPoints, deltaPct, deltaAbs, empty: false };
+}
+
+/** Суммирует выбранные посуточные ряды монет в один ряд стоимости портфеля-подмножества.
+ *  По объединению дней; для монеты, у которой в этот день ещё нет точки, переносим
+ *  последнее известное значение (0 до первого появления) — так линия не проваливается,
+ *  когда ряды монет начинаются в разные дни. */
+export function combineCoinSeries(series: CoinSeries[]): SnapshotPoint[] {
+  const withPoints = series.filter((s) => s.points.length);
+  if (!withPoints.length) return [];
+  const dayLabel = new Map<string, { t: string; label: string }>();
+  for (const s of withPoints) {
+    for (const p of s.points) {
+      const day = p.t.slice(0, 10);
+      if (!dayLabel.has(day)) dayLabel.set(day, { t: p.t, label: p.label });
+    }
+  }
+  const days = [...dayLabel.keys()].sort();
+  // Указатель по каждому ряду для переноса последнего значения ≤ текущего дня.
+  const ptr = withPoints.map(() => 0);
+  const last = withPoints.map(() => 0);
+  return days.map((day) => {
+    let sum = 0;
+    withPoints.forEach((s, i) => {
+      while (ptr[i] < s.points.length && s.points[ptr[i]].t.slice(0, 10) <= day) {
+        last[i] = s.points[ptr[i]].value;
+        ptr[i]++;
+      }
+      sum += last[i];
+    });
+    const meta = dayLabel.get(day)!;
+    return { t: meta.t, label: meta.label, value: Math.round(sum) };
+  });
 }
 
 /** Placeholder shown until enough history accumulates (PRD §6). */

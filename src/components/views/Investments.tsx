@@ -4,24 +4,99 @@ import { useState } from "react";
 import { useApp } from "@/lib/store";
 import { PERIODS } from "@/lib/mockData";
 import { fmt, fmtAmount, fmtTonNumbers, fmtRub } from "@/lib/format";
-import { LineChart, Chip, Badge, ChartEmpty, seriesForPeriod } from "@/lib/chart";
+import { LineChart, Chip, Badge, ChartEmpty, seriesForPeriod, combineCoinSeries } from "@/lib/chart";
 import { Icon } from "../Icon";
 import { Topbar, ThemeButton, RefreshButton, PeriodSeg, BarRow, SyncStamp } from "../ui";
 import { AddPersonalWalletModal } from "../AddPersonalWalletModal";
+import type { CoinSeries } from "@/lib/types";
 
 const CHAIN_LABEL: Record<string, string> = { BTC: "Bitcoin", ETH: "Ethereum", BSC: "BNB Chain", TRX: "Tron", TON: "TON" };
 
+/* График по монетам: выбор одной или нескольких позиций (крипта + TON-номера) →
+   суммарная линия стоимости за выбранный период. История копится с запуска фичи. */
+function CoinChartCard({ coinSeries, period }: { coinSeries: CoinSeries[]; period: string }) {
+  const [sel, setSel] = useState<string[]>(() => coinSeries.map((s) => s.symbol));
+  const toggle = (sym: string) => setSel((p) => (p.includes(sym) ? p.filter((x) => x !== sym) : [...p, sym]));
+  const allOn = coinSeries.length > 0 && sel.length === coinSeries.length;
+  const selected = coinSeries.filter((s) => sel.includes(s.symbol));
+  const combined = combineCoinSeries(selected);
+  const cc = seriesForPeriod(combined, period);
+  const total = combined.length ? combined[combined.length - 1].value : 0;
+
+  return (
+    <div className="card" style={{ padding: 24, marginTop: 20 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <div>
+          <div className="k">График по монетам</div>
+          <div className="h-sub" style={{ marginTop: 4 }}>
+            Выберите одну монету или несколько — покажем их суммарную стоимость. История по монетам копится с запуска функции.
+          </div>
+        </div>
+        {selected.length > 0 && (
+          <div style={{ textAlign: "right" }}>
+            <div className="mono" style={{ fontSize: 22, fontWeight: 500 }}>{fmt(total)}</div>
+            {!cc.empty && (
+              <div style={{ marginTop: 2 }}>
+                <Chip d={cc.deltaPct} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {coinSeries.length === 0 ? (
+        <div className="h-sub" style={{ padding: "8px 0 16px" }}>
+          Пока нет данных по монетам — ряды появятся после ближайших синхронизаций (обычно на следующий день).
+        </div>
+      ) : (
+        <>
+          <div className="seg-cat" style={{ marginBottom: 16 }}>
+            <button className={allOn ? "on" : ""} onClick={() => setSel(allOn ? [] : coinSeries.map((s) => s.symbol))}>
+              {allOn ? "Снять все" : "Выбрать все"}
+            </button>
+            {coinSeries.map((s) => (
+              <button key={s.symbol} className={sel.includes(s.symbol) ? "on" : ""} onClick={() => toggle(s.symbol)}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          {selected.length === 0 ? (
+            <div className="h-sub" style={{ padding: "24px 0", textAlign: "center" }}>Выберите монету, чтобы увидеть график.</div>
+          ) : cc.empty ? (
+            <ChartEmpty />
+          ) : (
+            <LineChart vals={cc.vals} labels={cc.labels} tip={cc.points} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Investments() {
-  const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast, cryptoHistory, tonNumberRate } = useApp();
+  const { store, refreshPersonal, personalSyncing, personalWallets, deletePersonalWallet, toast, cryptoHistory, coinSeries, tonNumberRate } = useApp();
   const [period, setPeriod] = useState("6М");
   const [openSym, setOpenSym] = useState<string | null>(null);
   const [walletModal, setWalletModal] = useState(false);
   const c = seriesForPeriod(cryptoHistory, period);
   const cr = store.assets.filter((a) => a.bucket === "crypto");
   const crTotal = cr.reduce((s, a) => s + a.value, 0);
+  // TON-номера теперь часть портфеля (по просьбе Алекса): входят в итог, аллокацию и график.
+  const tonNumAssets = store.assets.filter((a) => a.symbol === "TONNUM");
+  const tonNumTotal = tonNumAssets.reduce((s, a) => s + a.value, 0);
+  const portfolioTotal = crTotal + tonNumTotal;
+  // Аллокация по всему портфелю (крипта + TON-номера), доли — от общего итога.
+  const alloc = [
+    ...cr.map((a) => ({ t: a.symbol || a.name, val: a.value })),
+    ...(tonNumTotal > 0 ? [{ t: "TON номера", val: tonNumTotal }] : []),
+  ]
+    .filter((x) => x.val > 0)
+    .sort((x, y) => y.val - x.val);
+  // Позиции портфеля в списке: крипта + TON-номера.
+  const portfolioRows = [...cr, ...tonNumAssets];
   const other = store.otherInvestments;
-  // Non-crypto assets the user marked as investments (e.g. TON numbers).
-  const otherInv = store.assets.filter((a) => a.investment && a.bucket !== "crypto");
+  // Активы-инвестиции вне портфеля (TON-номера теперь в портфеле — исключаем из этого блока).
+  const otherInv = store.assets.filter((a) => a.investment && a.bucket !== "crypto" && a.symbol !== "TONNUM");
   const otherInvTotal = otherInv.reduce((s, a) => s + a.value, 0);
 
   return (
@@ -44,8 +119,13 @@ export default function Investments() {
             <div>
               <div className="k">Стоимость портфеля</div>
               <div className="mono" style={{ fontSize: 40, fontWeight: 500, letterSpacing: "-.025em", marginTop: 6, lineHeight: 1 }}>
-                {fmt(crTotal)}
+                {fmt(portfolioTotal)}
               </div>
+              {tonNumTotal > 0 && (
+                <div className="mono" style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
+                  крипта {fmt(crTotal)} · TON номера {fmt(tonNumTotal)}
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 4 }}>
               {!c.empty && <Chip d={c.deltaPct} />}
@@ -59,11 +139,14 @@ export default function Investments() {
           <div className="k" style={{ marginBottom: 10 }}>
             Аллокация по монетам
           </div>
-          {store.coins.map((coin) => (
-            <BarRow key={coin.t} label={coin.t} val={coin.pct + "%"} frac={coin.pct / 100} />
-          ))}
+          {alloc.map((coin) => {
+            const pct = portfolioTotal ? Math.round((coin.val / portfolioTotal) * 100) : 0;
+            return <BarRow key={coin.t} label={coin.t} val={pct + "%"} frac={portfolioTotal ? coin.val / portfolioTotal : 0} />;
+          })}
         </div>
       </div>
+
+      <CoinChartCard coinSeries={coinSeries} period={period} />
 
       <div className="card" style={{ padding: "8px 22px" }}>
         <div className="k" style={{ padding: "14px 0 4px" }}>
@@ -74,8 +157,31 @@ export default function Investments() {
             Нет крипто-холдингов. Балансы появятся после синхронизации (кнопка обновления вверху).
           </div>
         )}
-        {cr.map((a) => {
+        {portfolioRows.map((a) => {
           const sym = a.symbol || "";
+          // TON-номера: не крипто-монета, отдельная простая строка (без под-кошельков).
+          if (sym === "TONNUM") {
+            return (
+              <div key={a.id} style={{ borderBottom: "1px solid var(--hair-2)", display: "flex", alignItems: "center", gap: 12, padding: "13px 0" }}>
+                <div className="tile">
+                  <Icon name={a.icon} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>{a.name}</div>
+                  <div className="mono" style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+                    {fmtTonNumbers(a.amount ?? 0)}
+                    {tonNumberRate.usd > 0 ? ` · курс ${fmt(tonNumberRate.usd)}/номер` : ""}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div className="mono" style={{ fontSize: 15, fontWeight: 500 }}>{fmt(a.value)}</div>
+                  <div style={{ marginTop: 2 }}>
+                    <Chip d={a.delta} />
+                  </div>
+                </div>
+              </div>
+            );
+          }
           const subWallets = store.cryptoWallets.filter((w) => w.symbol === sym).sort((x, y) => y.usd - x.usd);
           const open = openSym === sym;
           return (
