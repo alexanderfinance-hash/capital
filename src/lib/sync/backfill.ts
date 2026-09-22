@@ -243,10 +243,12 @@ const BSC_TOKENS = [
   { symbol: "BTCB", contract: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", decimals: 18 },
 ];
 
+// Короткий таймаут для RPC — чтобы неотвечающий эндпоинт не съедал бюджет прогона.
+const RPC_TIMEOUT = 6000;
 async function rpcCall(rpcs: string[], method: string, params: unknown[]): Promise<string | null> {
   for (const url of rpcs) {
     try {
-      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: sig() });
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(RPC_TIMEOUT) });
       if (!res.ok) continue;
       const j: any = await res.json();
       if (j?.error || j?.result == null) continue;
@@ -259,8 +261,11 @@ async function rpcCall(rpcs: string[], method: string, params: unknown[]): Promi
 }
 
 /** EVM: посуточные балансы native + токенов через состояние на блоке дня.
- *  Только для монет, что сейчас на балансе (fully-sold историю не тянем). */
-async function evmDaily(chain: "ETH" | "BSC", address: string, startDayMs: number, endDayMs: number, avgSecDefault: number): Promise<Map<string, Map<number, number>>> {
+ *  Только для монет, что сейчас на балансе (fully-sold историю не тянем).
+ *  Быстрый пробник: если архивное состояние на СТАРОМ блоке недоступно — сразу выходим
+ *  (не тратим бюджет по 200 дней). Дни семплируем шагом EVM_STEP (по умолч. 3), чтобы
+ *  уложиться в бюджет; линия достраивается переносом значения. deadline — общий дедлайн. */
+async function evmDaily(chain: "ETH" | "BSC", address: string, startDayMs: number, endDayMs: number, avgSecDefault: number, deadline: number): Promise<Map<string, Map<number, number>>> {
   const rpcs = chain === "ETH" ? ETH_RPCS : BSC_RPCS;
   const tokens = chain === "ETH" ? ETH_TOKENS : BSC_TOKENS;
   const nativeSym = chain === "ETH" ? "ETH" : "BNB";
@@ -273,19 +278,25 @@ async function evmDaily(chain: "ETH" | "BSC", address: string, startDayMs: numbe
   const latestTs = blk ? Number(BigInt((blk as any).timestamp)) * 1000 : Date.now();
   const avgSec = Number(process.env[`BACKFILL_${chain}_BLOCK_SEC`]) || avgSecDefault;
   const blockOfDay = (dayMs: number) => Math.max(1, latest - Math.round((latestTs - dayMs) / 1000 / avgSec));
+  const callData = "0x70a08231" + address.slice(2).toLowerCase().padStart(64, "0");
+
+  // Быстрый пробник архивного состояния: пробуем native-баланс на самом старом блоке.
+  const probe = await rpcCall(rpcs, "eth_getBalance", [address, "0x" + blockOfDay(startDayMs).toString(16)]);
+  if (probe == null) return out; // архив недоступен → EVM-историю пропускаем целиком
 
   // какие монеты держим сейчас (native + токены с ненулевым балансом на latest)
   const held: { symbol: string; kind: "native" | "token"; contract?: string; decimals?: number }[] = [];
   const nativeNow = await rpcCall(rpcs, "eth_getBalance", [address, "latest"]);
   if (nativeNow && Number(BigInt(nativeNow)) > 0) held.push({ symbol: nativeSym, kind: "native" });
   for (const t of tokens) {
-    const data = "0x70a08231" + address.slice(2).toLowerCase().padStart(64, "0");
-    const now = await rpcCall(rpcs, "eth_call", [{ to: t.contract, data }, "latest"]);
+    const now = await rpcCall(rpcs, "eth_call", [{ to: t.contract, data: callData }, "latest"]);
     if (now && now !== "0x" && Number(BigInt(now)) > 0) held.push({ symbol: t.symbol, kind: "token", contract: t.contract, decimals: t.decimals });
   }
   if (!held.length) return out;
 
-  for (let day = startDayMs; day <= endDayMs; day += DAY) {
+  const step = Math.max(1, Number(process.env.BACKFILL_EVM_STEP) || 3) * DAY;
+  for (let day = startDayMs; day <= endDayMs; day += step) {
+    if (Date.now() > deadline) break; // бюджет исчерпан — вернём, что успели (докинем повтором)
     const bh = "0x" + blockOfDay(day).toString(16);
     for (const h of held) {
       const sym = mergeSymbol(h.symbol);
@@ -294,11 +305,10 @@ async function evmDaily(chain: "ETH" | "BSC", address: string, startDayMs: numbe
         const r = await rpcCall(rpcs, "eth_getBalance", [address, bh]);
         if (r != null) amount = Number(BigInt(r)) / 1e18;
       } else {
-        const data = "0x70a08231" + address.slice(2).toLowerCase().padStart(64, "0");
-        const r = await rpcCall(rpcs, "eth_call", [{ to: h.contract, data }, bh]);
+        const r = await rpcCall(rpcs, "eth_call", [{ to: h.contract, data: callData }, bh]);
         if (r != null && r !== "0x") amount = Number(BigInt(r)) / 10 ** (h.decimals || 18);
       }
-      if (amount == null) continue; // архивное состояние недоступно на этот день — пропускаем
+      if (amount == null) continue; // состояние на этот день недоступно — пропускаем
       (out.get(sym) || out.set(sym, new Map()).get(sym)!).set(day, amount);
     }
   }
@@ -340,12 +350,17 @@ export interface BackfillResult {
   written: number;
   pricesMissing: string[];
   tonNumbers?: { qty: number; unitUsd: number; source: string; written: number };
+  truncated?: boolean; // прогон прервался по бюджету времени — докиньте повторным запуском
 }
 
 export async function backfillCoinHistory(days = 200): Promise<BackfillResult> {
   const now = Date.now();
   const endDay = utcMidnight(now) - DAY; // вчера (сегодня пишет живой синк)
   const startDay = utcMidnight(now - days * DAY);
+  // Бюджет времени: запрос Node жёстко режется на 300с (requestTimeout), поэтому
+  // сами останавливаемся раньше и корректно возвращаем частичный результат —
+  // повторный запуск докидывает недостающие дни (идемпотентно).
+  const deadline = now + (Number(process.env.BACKFILL_BUDGET_MS) || 230000);
   const result: BackfillResult = { days, wallets: [], written: 0, pricesMissing: [] };
 
   const wallets = await prisma.wallet.findMany({ where: { scope: "personal" } });
@@ -362,66 +377,10 @@ export async function backfillCoinHistory(days = 200): Promise<BackfillResult> {
     }
   };
 
-  for (const w of wallets) {
-    const wr = { label: w.label, chain: w.chain as string, address: w.address, coins: {} as Record<string, number> };
-    result.wallets.push(wr);
-    try {
-      // 1) собрать посуточные балансы по монетам этого кошелька
-      const perCoin = new Map<string, Map<number, number>>();
-      const addFromDeltas = async (symbol: string, deltasFn: () => Promise<Delta[]>) => {
-        const sym = mergeSymbol(symbol);
-        const deltas = await deltasFn();
-        // текущий баланс монеты — из сохранённых holdingsJson (или 0)
-        const hs = Array.isArray(w.holdingsJson) ? (w.holdingsJson as any[]) : [];
-        const cur = hs.filter((h) => mergeSymbol(String(h?.symbol || "")) === sym).reduce((s, h) => s + (Number(h?.amount) || 0), 0);
-        if (cur <= 0 && !deltas.length) return;
-        perCoin.set(sym, dailyFromDeltas(cur, deltas, startDay, endDay));
-      };
-
-      if (w.chain === "BTC") {
-        await addFromDeltas("BTC", () => btcDeltas(w.address, startDay));
-      } else if (w.chain === "TRX") {
-        await addFromDeltas("USDT", () => tronTrc20Deltas(w.address, startDay));
-        await addFromDeltas("TRX", () => tronTrxDeltas(w.address, startDay));
-      } else if (w.chain === "TON") {
-        await addFromDeltas("TON", () => tonDeltas(w.address, startDay));
-      } else if (w.chain === "ETH" || w.chain === "BSC") {
-        const evm = await evmDaily(w.chain, w.address, startDay, endDay, w.chain === "ETH" ? 12 : 3);
-        for (const [sym, m] of evm) perCoin.set(sym, m);
-      }
-
-      // 2) какие дни уже есть (живой синк) — не перезаписываем
-      const existing = await prisma.walletDailySnapshot.findMany({ where: { walletId: w.id, day: { gte: new Date(startDay), lte: new Date(endDay) } }, select: { symbol: true, day: true } });
-      const have = new Set(existing.map((e) => `${e.symbol}|${utcMidnight(e.day.getTime())}`));
-
-      // 3) переоценка и запись отсутствующих дней
-      for (const [sym, dayMap] of perCoin) {
-        await ensurePrices(sym);
-        const prices = priceCache.get(sym.toUpperCase());
-        let wrote = 0;
-        for (const [dayMs, amount] of dayMap) {
-          if (have.has(`${sym}|${dayMs}`)) continue;
-          const price = prices ? priceOn(prices, dayMs) : sym === "USDT" || sym === "USDC" ? 1 : null;
-          if (price == null) continue;
-          await prisma.walletDailySnapshot.create({
-            data: { walletId: w.id, symbol: sym, day: new Date(dayMs), amount, usd: Math.round(amount * price), label: w.label, address: w.address, chain: w.chain as string },
-          });
-          wrote++;
-        }
-        if (wrote) {
-          wr.coins[sym] = wrote;
-          result.written += wrote;
-        }
-      }
-    } catch (e) {
-      (wr as any).error = String(e).slice(0, 200);
-    }
-  }
-
-  // TON-номера: их количество известно с момента отслеживания — восстанавливаем
-  // историю стоимости = количество × историческая цена номера. Цена: nums888
-  // (если задан NUMS888_HISTORY_URL), иначе фолбэк — масштабируем текущую цену номера
-  // по историческому курсу TON (GRAM) с CoinGecko (приближение: floor в GRAM ~стабилен).
+  // TON-номера считаем ПЕРВЫМИ (дёшево и гарантированно), пока бюджет цел: их количество
+  // известно с момента отслеживания → стоимость = количество × историческая цена. Цена:
+  // nums888 (если задан NUMS888_HISTORY_URL), иначе фолбэк — текущая цена × историч. курс
+  // TON (GRAM) с CoinGecko (приближение: floor в GRAM ~стабилен).
   try {
     const tonAssets = await prisma.asset.findMany({ where: { symbol: "TONNUM" } });
     const qty = tonAssets.reduce((s, a) => s + (a.amount == null ? 0 : Number(a.amount)), 0);
@@ -462,6 +421,70 @@ export async function backfillCoinHistory(days = 200): Promise<BackfillResult> {
     }
   } catch (e) {
     result.tonNumbers = { qty: 0, unitUsd: 0, source: "error: " + String(e).slice(0, 120), written: 0 };
+  }
+
+  // Кошельки: дешёвые сети (BTC/TRON/TON) идут первыми, EVM — последними (медленный/
+  // ненадёжный best-effort), чтобы при исчерпании бюджета успело записаться главное.
+  const order = (c: string) => (c === "ETH" || c === "BSC" ? 1 : 0);
+  const sortedWallets = wallets.slice().sort((a, b) => order(a.chain as string) - order(b.chain as string));
+  for (const w of sortedWallets) {
+    if (Date.now() > deadline) {
+      result.truncated = true;
+      break;
+    }
+    const wr = { label: w.label, chain: w.chain as string, address: w.address, coins: {} as Record<string, number> };
+    result.wallets.push(wr);
+    try {
+      // 1) собрать посуточные балансы по монетам этого кошелька
+      const perCoin = new Map<string, Map<number, number>>();
+      const addFromDeltas = async (symbol: string, deltasFn: () => Promise<Delta[]>) => {
+        const sym = mergeSymbol(symbol);
+        const deltas = await deltasFn();
+        // текущий баланс монеты — из сохранённых holdingsJson (или 0)
+        const hs = Array.isArray(w.holdingsJson) ? (w.holdingsJson as any[]) : [];
+        const cur = hs.filter((h) => mergeSymbol(String(h?.symbol || "")) === sym).reduce((s, h) => s + (Number(h?.amount) || 0), 0);
+        if (cur <= 0 && !deltas.length) return;
+        perCoin.set(sym, dailyFromDeltas(cur, deltas, startDay, endDay));
+      };
+
+      if (w.chain === "BTC") {
+        await addFromDeltas("BTC", () => btcDeltas(w.address, startDay));
+      } else if (w.chain === "TRX") {
+        await addFromDeltas("USDT", () => tronTrc20Deltas(w.address, startDay));
+        await addFromDeltas("TRX", () => tronTrxDeltas(w.address, startDay));
+      } else if (w.chain === "TON") {
+        await addFromDeltas("TON", () => tonDeltas(w.address, startDay));
+      } else if (w.chain === "ETH" || w.chain === "BSC") {
+        const evm = await evmDaily(w.chain, w.address, startDay, endDay, w.chain === "ETH" ? 12 : 3, deadline);
+        for (const [sym, m] of evm) perCoin.set(sym, m);
+      }
+
+      // 2) какие дни уже есть (живой синк) — не перезаписываем
+      const existing = await prisma.walletDailySnapshot.findMany({ where: { walletId: w.id, day: { gte: new Date(startDay), lte: new Date(endDay) } }, select: { symbol: true, day: true } });
+      const have = new Set(existing.map((e) => `${e.symbol}|${utcMidnight(e.day.getTime())}`));
+
+      // 3) переоценка и запись отсутствующих дней
+      for (const [sym, dayMap] of perCoin) {
+        await ensurePrices(sym);
+        const prices = priceCache.get(sym.toUpperCase());
+        let wrote = 0;
+        for (const [dayMs, amount] of dayMap) {
+          if (have.has(`${sym}|${dayMs}`)) continue;
+          const price = prices ? priceOn(prices, dayMs) : sym === "USDT" || sym === "USDC" ? 1 : null;
+          if (price == null) continue;
+          await prisma.walletDailySnapshot.create({
+            data: { walletId: w.id, symbol: sym, day: new Date(dayMs), amount, usd: Math.round(amount * price), label: w.label, address: w.address, chain: w.chain as string },
+          });
+          wrote++;
+        }
+        if (wrote) {
+          wr.coins[sym] = wrote;
+          result.written += wrote;
+        }
+      }
+    } catch (e) {
+      (wr as any).error = String(e).slice(0, 200);
+    }
   }
 
   return result;
