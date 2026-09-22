@@ -305,6 +305,33 @@ async function evmDaily(chain: "ETH" | "BSC", address: string, startDayMs: numbe
   return out;
 }
 
+/* ---------- TON-номера: историческая цена номера ---------- */
+// Опционально: URL истории цены номера (nums888). Плейсхолдеры {from}/{to} — unix-сек.
+// Гибкий парсинг ответа. Если не задан/недоступен — используем фолбэк по курсу TON.
+async function fetchNums888History(fromMs: number, toMs: number): Promise<Map<number, number> | null> {
+  const tmpl = process.env.NUMS888_HISTORY_URL;
+  if (!tmpl) return null;
+  const url = tmpl.replace("{from}", String(Math.floor(fromMs / 1000))).replace("{to}", String(Math.floor(toMs / 1000)));
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: sig() });
+    if (!res.ok) return null;
+    const j: any = await res.json();
+    const rows: any[] = Array.isArray(j) ? j : Array.isArray(j?.prices) ? j.prices : Array.isArray(j?.data) ? j.data : [];
+    const out = new Map<number, number>();
+    for (const r of rows) {
+      let ts: number, price: number;
+      if (Array.isArray(r)) { ts = Number(r[0]); price = Number(r[1]); }
+      else { ts = Number(r.t ?? r.time ?? r.timestamp ?? r.date); price = Number(r.usd ?? r.price ?? r.value ?? r.close); }
+      if (!isFinite(ts) || !isFinite(price) || price <= 0) continue;
+      if (ts < 1e12) ts *= 1000; // sec → ms
+      out.set(utcMidnight(ts), price);
+    }
+    return out.size ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 /* ===================== Оркестрация ===================== */
 
 export interface BackfillResult {
@@ -312,6 +339,7 @@ export interface BackfillResult {
   wallets: { label: string; chain: string; address: string; coins: Record<string, number>; error?: string }[];
   written: number;
   pricesMissing: string[];
+  tonNumbers?: { qty: number; unitUsd: number; source: string; written: number };
 }
 
 export async function backfillCoinHistory(days = 200): Promise<BackfillResult> {
@@ -389,5 +417,52 @@ export async function backfillCoinHistory(days = 200): Promise<BackfillResult> {
       (wr as any).error = String(e).slice(0, 200);
     }
   }
+
+  // TON-номера: их количество известно с момента отслеживания — восстанавливаем
+  // историю стоимости = количество × историческая цена номера. Цена: nums888
+  // (если задан NUMS888_HISTORY_URL), иначе фолбэк — масштабируем текущую цену номера
+  // по историческому курсу TON (GRAM) с CoinGecko (приближение: floor в GRAM ~стабилен).
+  try {
+    const tonAssets = await prisma.asset.findMany({ where: { symbol: "TONNUM" } });
+    const qty = tonAssets.reduce((s, a) => s + (a.amount == null ? 0 : Number(a.amount)), 0);
+    const priceRow = await prisma.priceCache.findUnique({ where: { symbol: "TONNUM" } });
+    const curUnit = priceRow ? Number(priceRow.usd) : 0;
+    if (qty > 0 && curUnit > 0) {
+      let unitByDay = await fetchNums888History(startDay - 3 * DAY, now);
+      let source = "nums888";
+      if (!unitByDay) {
+        await ensurePrices("TON");
+        const ton = priceCache.get("TON");
+        const refToday = ton ? priceOn(ton, endDay) : null;
+        if (ton && refToday) {
+          unitByDay = new Map();
+          for (let day = startDay; day <= endDay; day += DAY) {
+            const tp = priceOn(ton, day);
+            if (tp) unitByDay.set(day, (curUnit * tp) / refToday);
+          }
+          source = "ton-ratio (approx)";
+        }
+      }
+      let written = 0;
+      if (unitByDay) {
+        const existing = await prisma.walletDailySnapshot.findMany({ where: { walletId: "tonnum", day: { gte: new Date(startDay), lte: new Date(endDay) } }, select: { day: true } });
+        const have = new Set(existing.map((e) => utcMidnight(e.day.getTime())));
+        for (let day = startDay; day <= endDay; day += DAY) {
+          if (have.has(day)) continue;
+          const unit = priceOn(unitByDay, day);
+          if (unit == null) continue;
+          await prisma.walletDailySnapshot.create({
+            data: { walletId: "tonnum", symbol: "TONNUM", day: new Date(day), amount: qty, usd: Math.round(qty * unit), label: "TON номера", address: "—", chain: "TON" },
+          });
+          written++;
+        }
+      }
+      result.written += written;
+      result.tonNumbers = { qty, unitUsd: curUnit, source, written };
+    }
+  } catch (e) {
+    result.tonNumbers = { qty: 0, unitUsd: 0, source: "error: " + String(e).slice(0, 120), written: 0 };
+  }
+
   return result;
 }
