@@ -249,9 +249,14 @@ export function Chip({ d, goodOverride }: { d: number | null | undefined; goodOv
 export function RadarChart({ axes, size = 320, color = "#3b6ef0" }: { axes: { label: string; value: number }[]; size?: number; color?: string }) {
   const n = axes.length;
   if (n < 3) return null; // радар осмыслен от 3 осей
-  const cx = size / 2;
-  const cy = size / 2;
-  const R = size / 2 - 58; // место под подписи осей
+  // Горизонтальные/вертикальные поля под подписи осей (длинные названия переносятся).
+  const PAD = 96;
+  const VPAD = 30;
+  const W = size + 2 * PAD;
+  const H = size + 2 * VPAD;
+  const cx = PAD + size / 2;
+  const cy = VPAD + size / 2;
+  const R = size / 2 - 40;
   const max = Math.max(...axes.map((a) => a.value), 1);
   const ang = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
   const pt = (i: number, r: number): [number, number] => [cx + r * Math.cos(ang(i)), cy + r * Math.sin(ang(i))];
@@ -261,8 +266,26 @@ export function RadarChart({ axes, size = 320, color = "#3b6ef0" }: { axes: { la
   const maxV = Math.max(...axes.map((a) => a.value));
   const minV = Math.min(...axes.map((a) => a.value));
 
+  // Перенос длинной подписи на несколько строк (жадно по словам, максимум 3 строки).
+  const wrap = (s: string, m = 15): string[] => {
+    const words = s.split(/\s+/);
+    const lines: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      if (!cur) cur = w;
+      else if ((cur + " " + w).length <= m) cur += " " + w;
+      else {
+        lines.push(cur);
+        cur = w;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines.slice(0, 3);
+  };
+  const LH = 12.5;
+
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", maxWidth: size, height: "auto", display: "block", margin: "0 auto" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", display: "block", margin: "0 auto" }}>
       {/* концентрические сетки */}
       {rings.map((f, ri) => (
         <polygon key={`r${ri}`} points={polyStr(axes.map((_, i) => pt(i, R * f)))} fill="none" stroke="var(--hair)" strokeWidth={1} />
@@ -279,16 +302,21 @@ export function RadarChart({ axes, size = 320, color = "#3b6ef0" }: { axes: { la
       ))}
       {/* подписи осей + значения; преобладающая ось выделяется цветом, отстающая — приглушается */}
       {axes.map((a, i) => {
-        const [lx, ly] = pt(i, R + 22);
+        const [lx, ly] = pt(i, R + 20);
         const anchor = Math.abs(lx - cx) < 6 ? "middle" : lx > cx ? "start" : "end";
         const isMax = a.value === maxV && maxV !== minV;
         const isMin = a.value === minV && maxV !== minV;
+        const lines = wrap(a.label);
+        const nLines = lines.length + 1; // + строка значения
+        const startY = ly - ((nLines - 1) * LH) / 2;
         return (
           <g key={`l${i}`}>
-            <text x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle" style={{ fontSize: 11, fontWeight: isMax ? 700 : 500, fill: isMax ? color : isMin ? "var(--faint)" : "var(--ink-2)", fontFamily: "var(--sans)" }}>
-              {a.label}
-            </text>
-            <text x={lx} y={ly + 13} textAnchor={anchor} dominantBaseline="middle" className="mono" style={{ fontSize: 9.5, fill: "var(--muted)" }}>
+            {lines.map((ln, li) => (
+              <text key={li} x={lx} y={startY + li * LH} textAnchor={anchor} dominantBaseline="middle" style={{ fontSize: 11, fontWeight: isMax ? 700 : 500, fill: isMax ? color : isMin ? "var(--faint)" : "var(--ink-2)", fontFamily: "var(--sans)" }}>
+                {ln}
+              </text>
+            ))}
+            <text x={lx} y={startY + lines.length * LH} textAnchor={anchor} dominantBaseline="middle" className="mono" style={{ fontSize: 9.5, fill: "var(--muted)" }}>
               {fmtK(a.value)}
             </text>
           </g>
