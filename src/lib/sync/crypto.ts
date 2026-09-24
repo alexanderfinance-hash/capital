@@ -238,12 +238,12 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     const personalTotal = allAssets.reduce((s, a) => s + (a.bucket === "intangible" ? 0 : a.liability ? -Number(a.value) : Number(a.value)), 0);
     await writeDailySnapshot(tx, "personal", personalTotal);
 
-    // crypto-portfolio snapshot (Investments chart — PRD §6: третий ряд снимков).
-    // Включаем TON-номера в стоимость портфеля (по просьбе Алекса — они тоже часть
-    // инвестиций). Историю до этого TON-номера не содержат (снимок был крипта-only).
+    // crypto-portfolio snapshot (PRD §6). Только крипта (без TON-номеров): линия
+    // стоимости портфеля на «Инвестициях» теперь строится из посуточных рядов по
+    // монетам + TON-номера (combineCoinSeries), поэтому подмешивать номера сюда не
+    // нужно — иначе получалась ступенька задним числом.
     const cryptoTotal = allAssets.filter((a) => a.bucket === "crypto").reduce((s, a) => s + Number(a.value), 0);
-    const tonNumTotal = allAssets.filter((a) => a.symbol === "TONNUM").reduce((s, a) => s + Number(a.value), 0);
-    await writeDailySnapshot(tx, "crypto", cryptoTotal + tonNumTotal);
+    await writeDailySnapshot(tx, "crypto", cryptoTotal);
 
     // company snapshot (wallets + agencies)
     const companyWallets = await tx.wallet.findMany({ where: { scope: "company" } });
