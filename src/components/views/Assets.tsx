@@ -319,9 +319,9 @@ export default function Assets() {
                       {top.map((a) => {
                         const pct = total ? Math.round((a.value / total) * 100) : 0;
                         return (
-                          <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--hair-2)" }}>
-                            <span style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</span>
-                            <span className="mono" style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                          <div key={a.id} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "7px 0", borderBottom: "1px solid var(--hair-2)" }}>
+                            <span style={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0 }}>{a.name}</span>
+                            <span className="mono" style={{ fontSize: 12.5, color: "var(--muted)", flex: "none", whiteSpace: "nowrap" }}>
                               {fmt(a.value)} · {pct}%
                             </span>
                           </div>
