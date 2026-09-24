@@ -78,7 +78,10 @@ export default function Investments() {
   const [period, setPeriod] = useState("6М");
   const [openSym, setOpenSym] = useState<string | null>(null);
   const [walletModal, setWalletModal] = useState(false);
-  const c = seriesForPeriod(cryptoHistory, period);
+  // Линия стоимости портфеля = суммарная посуточная стоимость по всем монетам +
+  // TON-номера (тот же источник, что «Выбрать все» → без ступеньки от подмешивания
+  // номеров задним числом). Фолбэк на cryptoHistory, если рядов ещё нет.
+  const c = seriesForPeriod(coinSeries.length ? combineCoinSeries(coinSeries) : cryptoHistory, period);
   const cr = store.assets.filter((a) => a.bucket === "crypto");
   const crTotal = cr.reduce((s, a) => s + a.value, 0);
   // TON-номера теперь часть портфеля (по просьбе Алекса): входят в итог, аллокацию и график.
