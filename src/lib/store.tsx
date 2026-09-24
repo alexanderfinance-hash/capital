@@ -34,6 +34,7 @@ interface AppState {
   deleteAsset: (id: string) => void;
   setAssetAmount: (id: string, amount: number) => void;
   setAssetNative: (id: string, nativeValue: number) => void;
+  setAssetValue: (id: string, value: number) => void;
   setAssetInvestment: (id: string, investment: boolean) => void;
   tonNumberRate: TonNumberRate;
   usdRub: number;
@@ -141,7 +142,8 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
   const reserveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Личный капитал: активы плюсуются, задолженности (liability) вычитаются.
-  const personalTotal = useMemo(() => store.assets.reduce((s, a) => s + (a.liability ? -a.value : a.value), 0), [store.assets]);
+  // Нематериальные активы (сферы жизни) — мотивационный слой, в реальный капитал НЕ входят.
+  const personalTotal = useMemo(() => store.assets.reduce((s, a) => s + (a.bucket === "intangible" ? 0 : a.liability ? -a.value : a.value), 0), [store.assets]);
 
   const toast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -192,6 +194,14 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     },
     [usdRub]
   );
+
+  const setAssetValue = useCallback((id: string, value: number) => {
+    setStore((prev) => ({
+      ...prev,
+      assets: prev.assets.map((x) => (x.id === id ? { ...x, currency: "USD", nativeValue: null, value } : x)),
+    }));
+    api("PATCH", `/api/assets/${id}`, { value });
+  }, []);
 
   const setAssetInvestment = useCallback((id: string, investment: boolean) => {
     setStore((prev) => ({ ...prev, assets: prev.assets.map((x) => (x.id === id ? { ...x, investment } : x)) }));
@@ -400,6 +410,7 @@ export function AppProvider({ initial, children }: { initial: InitialData; child
     deleteAsset,
     setAssetAmount,
     setAssetNative,
+    setAssetValue,
     setAssetInvestment,
     tonNumberRate,
     usdRub,

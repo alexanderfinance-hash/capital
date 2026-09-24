@@ -9,6 +9,7 @@ import Overview from "./views/Overview";
 import Investments from "./views/Investments";
 import Expenses from "./views/Expenses";
 import Assets from "./views/Assets";
+import WalletHistory from "./views/WalletHistory";
 import Company from "./views/Company";
 
 interface NavDef {
@@ -20,6 +21,7 @@ interface NavDef {
 const PERSONAL: NavDef[] = [
   { href: "/", icon: "grid", label: "Обзор" },
   { href: "/investments", icon: "trend", label: "Инвестиции" },
+  { href: "/wallet-history", icon: "swap", label: "Движения" },
   { href: "/expenses", icon: "receipt", label: "Расходы" },
   { href: "/assets", icon: "box", label: "Активы" },
 ];
@@ -29,6 +31,7 @@ const MOBILE: NavDef[] = [...PERSONAL, { href: "/company", icon: "building", lab
 const VIEWS: Record<string, React.ComponentType> = {
   "/": Overview,
   "/investments": Investments,
+  "/wallet-history": WalletHistory,
   "/expenses": Expenses,
   "/assets": Assets,
   "/company": Company,

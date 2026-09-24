@@ -377,44 +377,30 @@ export async function backfillCoinHistory(days = 200): Promise<BackfillResult> {
     }
   };
 
-  // TON-номера считаем ПЕРВЫМИ (дёшево и гарантированно), пока бюджет цел: их количество
-  // известно с момента отслеживания → стоимость = количество × историческая цена. Цена:
-  // nums888 (если задан NUMS888_HISTORY_URL), иначе фолбэк — текущая цена × историч. курс
-  // TON (GRAM) с CoinGecko (приближение: floor в GRAM ~стабилен).
+  // TON-номера считаем ПЕРВЫМИ (дёшево и гарантированно): их количество известно с
+  // момента отслеживания → стоимость = количество × цена номера в USD.
+  // Точная история цены — только если задан NUMS888_HISTORY_URL (у nums888 API за
+  // Cloudflare, автоматически не тянется). Иначе фолбэк — РОВНО текущий флор в USD
+  // на все прошлые дни (без выдуманных качелей; курс TON тут НЕ при чём — номер
+  // котируется в USD). Реальная дневная цена копится вперёд из живого синка.
+  // Перезаписываем прошлые дни (upsert), чтобы исправить возможные прежние значения.
   try {
     const tonAssets = await prisma.asset.findMany({ where: { symbol: "TONNUM" } });
     const qty = tonAssets.reduce((s, a) => s + (a.amount == null ? 0 : Number(a.amount)), 0);
     const priceRow = await prisma.priceCache.findUnique({ where: { symbol: "TONNUM" } });
     const curUnit = priceRow ? Number(priceRow.usd) : 0;
     if (qty > 0 && curUnit > 0) {
-      let unitByDay = await fetchNums888History(startDay - 3 * DAY, now);
-      let source = "nums888";
-      if (!unitByDay) {
-        await ensurePrices("TON");
-        const ton = priceCache.get("TON");
-        const refToday = ton ? priceOn(ton, endDay) : null;
-        if (ton && refToday) {
-          unitByDay = new Map();
-          for (let day = startDay; day <= endDay; day += DAY) {
-            const tp = priceOn(ton, day);
-            if (tp) unitByDay.set(day, (curUnit * tp) / refToday);
-          }
-          source = "ton-ratio (approx)";
-        }
-      }
+      const unitByDay = await fetchNums888History(startDay - 3 * DAY, now);
+      const source = unitByDay ? "nums888" : "flat (current floor)";
       let written = 0;
-      if (unitByDay) {
-        const existing = await prisma.walletDailySnapshot.findMany({ where: { walletId: "tonnum", day: { gte: new Date(startDay), lte: new Date(endDay) } }, select: { day: true } });
-        const have = new Set(existing.map((e) => utcMidnight(e.day.getTime())));
-        for (let day = startDay; day <= endDay; day += DAY) {
-          if (have.has(day)) continue;
-          const unit = priceOn(unitByDay, day);
-          if (unit == null) continue;
-          await prisma.walletDailySnapshot.create({
-            data: { walletId: "tonnum", symbol: "TONNUM", day: new Date(day), amount: qty, usd: Math.round(qty * unit), label: "TON номера", address: "—", chain: "TON" },
-          });
-          written++;
-        }
+      for (let day = startDay; day <= endDay; day += DAY) {
+        const unit = unitByDay ? priceOn(unitByDay, day) ?? curUnit : curUnit;
+        await prisma.walletDailySnapshot.upsert({
+          where: { walletId_symbol_day: { walletId: "tonnum", symbol: "TONNUM", day: new Date(day) } },
+          update: { amount: qty, usd: Math.round(qty * unit), label: "TON номера", address: "—", chain: "TON" },
+          create: { walletId: "tonnum", symbol: "TONNUM", day: new Date(day), amount: qty, usd: Math.round(qty * unit), label: "TON номера", address: "—", chain: "TON" },
+        });
+        written++;
       }
       result.written += written;
       result.tonNumbers = { qty, unitUsd: curUnit, source, written };

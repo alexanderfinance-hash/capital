@@ -25,6 +25,7 @@ export const ICON_PATHS: Record<string, string> = {
   building:
     '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01"/><path d="M9 21v-3h6v3"/>',
   plus: '<path d="M12 6v12M6 12h12"/>',
+  swap: '<path d="M7 4v13"/><polyline points="4 8 7 4 10 8"/><path d="M17 20V7"/><polyline points="14 16 17 20 20 16"/>',
   grid:
     '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   trend: '<polyline points="3 17 9 11 13 15 21 7"/><polyline points="21 11 21 7 17 7"/>',
