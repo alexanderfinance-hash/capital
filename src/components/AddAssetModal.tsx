@@ -24,6 +24,7 @@ const CATS: CatDef[] = [
   { label: "TON номера", icon: "phone", bucket: "other", src: "manual", tonNumber: true },
   { label: "Криптокошелёк", icon: "wallet", bucket: "crypto", src: "sync" },
   { label: "Прочий актив", icon: "box", bucket: "other", src: "manual" },
+  { label: "Нематериальный актив", icon: "gem", bucket: "intangible", src: "manual" },
   { label: "Задолженность", icon: "receipt", bucket: "other", src: "manual", liability: true },
 ];
 
@@ -52,8 +53,8 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
   // Currency choice applies to value-based manual assets (cash / car / valuables / other).
   const showCurrency = !c.tonNumber && c.src === "manual";
   // Manual value assets can be flagged as investments (TON numbers always are).
-  // Задолженности инвестициями быть не могут.
-  const showInvest = !c.tonNumber && !c.liability && c.src === "manual";
+  // Задолженности и нематериальные активы (сферы жизни) инвестициями быть не могут.
+  const showInvest = !c.tonNumber && !c.liability && c.src === "manual" && c.bucket !== "intangible";
   const isRub = showCurrency && cur === "RUB";
   const parsed = parseFloat((val || "").replace(/[^\d.]/g, "")) || 0;
   const previewUsd = isRub && usdRub > 0 ? Math.round(parsed / usdRub) : 0;
@@ -186,6 +187,11 @@ export function AddAssetModal({ onClose }: { onClose: () => void }) {
           {c.src === "sync" && !c.tonNumber && (
             <div className="hint" style={{ display: "flex" }}>
               <Badge src="sync" /> Баланс и цена будут подтягиваться автоматически
+            </div>
+          )}
+          {c.bucket === "intangible" && (
+            <div className="hint" style={{ color: "var(--muted)" }}>
+              Сфера жизни в денежном эквиваленте (напр. «Здоровье», «Семья», «Знания»). Помечается синим, показывается отдельно и на «колесе баланса» по осям. В общий капитал не входит.
             </div>
           )}
         </div>

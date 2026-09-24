@@ -234,7 +234,8 @@ export async function syncCrypto(providers: CryptoProviders = defaultProviders):
     // накопившиеся до перехода на ежедневные снимки), чтобы линия была гладкой.
     const allAssets = await tx.asset.findMany();
     // Задолженности (liability) вычитаются из личного капитала.
-    const personalTotal = allAssets.reduce((s, a) => s + (a.liability ? -Number(a.value) : Number(a.value)), 0);
+    // Нематериальные активы (сферы жизни) — мотивационный слой, в капитал не входят.
+    const personalTotal = allAssets.reduce((s, a) => s + (a.bucket === "intangible" ? 0 : a.liability ? -Number(a.value) : Number(a.value)), 0);
     await writeDailySnapshot(tx, "personal", personalTotal);
 
     // crypto-portfolio snapshot (Investments chart — PRD §6: третий ряд снимков).

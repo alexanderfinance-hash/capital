@@ -3,7 +3,7 @@
    dashboard-company.js) so they can map directly onto the DB schema later. */
 
 export type DataSource = "sync" | "sheets" | "manual";
-export type AssetBucket = "crypto" | "vehicles" | "cash" | "other";
+export type AssetBucket = "crypto" | "vehicles" | "cash" | "other" | "intangible";
 
 export interface Asset {
   id: string;

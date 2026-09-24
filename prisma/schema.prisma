@@ -23,6 +23,7 @@ enum AssetBucket {
   vehicles
   cash
   other
+  intangible
 }
 
 enum Chain {

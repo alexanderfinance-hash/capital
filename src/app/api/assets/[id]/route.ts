@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let b: { amount?: number; nativeValue?: number; investment?: boolean } = {};
+  let b: { amount?: number; nativeValue?: number; value?: number; investment?: boolean } = {};
   try {
     b = await req.json();
   } catch {
@@ -26,6 +26,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (!asset) return NextResponse.json({ error: "not_found" }, { status: 404 });
       await prisma.asset.update({ where: { id: asset.id }, data: { investment: b.investment } });
       return NextResponse.json({ ok: true, investment: b.investment });
+    } catch {
+      return NextResponse.json({ persisted: false }, { status: 503 });
+    }
+  }
+
+  // Manual asset in USD (прочее / нематериальные): set the dollar value directly.
+  // Clears any RUB linkage so data.ts не пересчитывает его по курсу.
+  if (b.value != null && b.nativeValue == null && b.amount == null) {
+    const value = Math.round(Number(b.value));
+    if (isNaN(value) || value < 0) return NextResponse.json({ error: "invalid_value" }, { status: 400 });
+    try {
+      const asset = await prisma.asset.findFirst({ where: { OR: [{ slug: params.id }, { id: params.id }], source: "manual" } });
+      if (!asset) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      await prisma.asset.update({ where: { id: asset.id }, data: { value, currency: "USD", nativeValue: null } });
+      return NextResponse.json({ ok: true, value });
     } catch {
       return NextResponse.json({ persisted: false }, { status: 503 });
     }

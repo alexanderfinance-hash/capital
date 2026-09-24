@@ -245,6 +245,59 @@ export function Chip({ d, goodOverride }: { d: number | null | undefined; goodOv
   );
 }
 
+/* ===== Колесо баланса (radar) — оценка сфер жизни по осям ===== */
+export function RadarChart({ axes, size = 320, color = "#3b6ef0" }: { axes: { label: string; value: number }[]; size?: number; color?: string }) {
+  const n = axes.length;
+  if (n < 3) return null; // радар осмыслен от 3 осей
+  const cx = size / 2;
+  const cy = size / 2;
+  const R = size / 2 - 58; // место под подписи осей
+  const max = Math.max(...axes.map((a) => a.value), 1);
+  const ang = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const pt = (i: number, r: number): [number, number] => [cx + r * Math.cos(ang(i)), cy + r * Math.sin(ang(i))];
+  const polyStr = (pts: [number, number][]) => pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const rings = [0.25, 0.5, 0.75, 1];
+  const dataPts = axes.map((a, i) => pt(i, R * (a.value / max)));
+  const maxV = Math.max(...axes.map((a) => a.value));
+  const minV = Math.min(...axes.map((a) => a.value));
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", maxWidth: size, height: "auto", display: "block", margin: "0 auto" }}>
+      {/* концентрические сетки */}
+      {rings.map((f, ri) => (
+        <polygon key={`r${ri}`} points={polyStr(axes.map((_, i) => pt(i, R * f)))} fill="none" stroke="var(--hair)" strokeWidth={1} />
+      ))}
+      {/* спицы */}
+      {axes.map((_, i) => {
+        const [x, y] = pt(i, R);
+        return <line key={`s${i}`} x1={cx} y1={cy} x2={x} y2={y} stroke="var(--hair)" strokeWidth={1} />;
+      })}
+      {/* фигура значений */}
+      <polygon points={polyStr(dataPts)} fill={color} fillOpacity={0.16} stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      {dataPts.map((p, i) => (
+        <circle key={`d${i}`} cx={p[0]} cy={p[1]} r={3.2} fill={color} />
+      ))}
+      {/* подписи осей + значения; преобладающая ось выделяется цветом, отстающая — приглушается */}
+      {axes.map((a, i) => {
+        const [lx, ly] = pt(i, R + 22);
+        const anchor = Math.abs(lx - cx) < 6 ? "middle" : lx > cx ? "start" : "end";
+        const isMax = a.value === maxV && maxV !== minV;
+        const isMin = a.value === minV && maxV !== minV;
+        return (
+          <g key={`l${i}`}>
+            <text x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle" style={{ fontSize: 11, fontWeight: isMax ? 700 : 500, fill: isMax ? color : isMin ? "var(--faint)" : "var(--ink-2)", fontFamily: "var(--sans)" }}>
+              {a.label}
+            </text>
+            <text x={lx} y={ly + 13} textAnchor={anchor} dominantBaseline="middle" className="mono" style={{ fontSize: 9.5, fill: "var(--muted)" }}>
+              {fmtK(a.value)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 /* Source badge — mirrors badge(). */
 export function Badge({ src }: { src: string }) {
   if (src === "sync")
@@ -413,9 +466,11 @@ export function CategoryDonut({
 export function Donut({ assets }: { assets: Asset[] }) {
   // Кольцо — состав активов; задолженности (liability) отдельной строкой вычета,
   // центр показывает ИТОГО с учётом долгов (как «Общий капитал» в заголовке).
-  const shown = assets.filter((a) => !a.liability);
+  // Нематериальные активы (сферы жизни) в состав капитала не входят.
+  const real = assets.filter((a) => a.bucket !== "intangible");
+  const shown = real.filter((a) => !a.liability);
   const T = shown.reduce((s, a) => s + a.value, 0);
-  const liab = assets.reduce((s, a) => s + (a.liability ? a.value : 0), 0);
+  const liab = real.reduce((s, a) => s + (a.liability ? a.value : 0), 0);
   const net = T - liab;
   const B: Record<string, number> = { crypto: 0, vehicles: 0, cash: 0, other: 0 };
   shown.forEach((a) => (B[a.bucket] = (B[a.bucket] || 0) + a.value));
