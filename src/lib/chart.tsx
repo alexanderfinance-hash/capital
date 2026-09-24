@@ -108,6 +108,32 @@ export interface ChartOpts {
   ticks?: boolean;
 }
 
+/* «Красивое» число (1/2/5 × 10^k) — для округлённых делений оси. */
+function niceNum(x: number, round: boolean): number {
+  if (!(x > 0)) return 1;
+  const exp = Math.floor(Math.log10(x));
+  const f = x / Math.pow(10, exp);
+  const nf = round ? (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) : f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return nf * Math.pow(10, exp);
+}
+/* Округлённая шкала оси Y: деления вида 0 / 100k / 500k / 1M, а не 346323. */
+function niceScale(min: number, max: number, count = 4): { min: number; max: number; ticks: number[] } {
+  if (!(max > min)) {
+    // плоский ряд — шкала от 0 до округлённого максимума.
+    const top = niceNum(Math.max(max, 1), false);
+    const step = niceNum(top / (count - 1), true) || top;
+    const ticks: number[] = [];
+    for (let v = 0; v <= top + step * 0.5; v += step) ticks.push(Math.round(v));
+    return { min: 0, max: ticks[ticks.length - 1], ticks };
+  }
+  const step = niceNum((max - min) / (count - 1), true);
+  const nmin = Math.floor(min / step) * step;
+  const nmax = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let v = nmin; v <= nmax + step * 0.5; v += step) ticks.push(Math.round(v));
+  return { min: nmin, max: nmax, ticks };
+}
+
 /* Line/area chart — mirrors buildChart() in dashboard-content.js.
    `vals` are in thousands (axis labels use fmtK(v*1000)).
    `tip` (optional) carries the full per-point label + USD value so hovering the
@@ -122,10 +148,12 @@ export function LineChart({ vals, labels, tip, o = {} }: { vals: number[]; label
     top = 22,
     bot = o.bot || 196;
   const lo = Math.min(...vals),
-    hi = Math.max(...vals),
-    pad = (hi - lo || 1) * 0.18;
-  const vlo = lo - pad,
-    vhi = hi + pad;
+    hi = Math.max(...vals);
+  // Небольшой отступ по данным + округлённая шкала (деления — «человеческие» числа).
+  const gap = (hi - lo) * 0.08;
+  const sc = niceScale((lo - gap) * 1000, (hi + gap) * 1000, 4); // в долларах
+  const vlo = sc.min / 1000; // обратно в тысячи (единицы vals)
+  const vhi = sc.max / 1000 > vlo ? sc.max / 1000 : vlo + 1;
   const X = (i: number) => padL + (i * (W - padL - padR)) / (vals.length - 1);
   const Y = (v: number) => top + (1 - (v - vlo) / (vhi - vlo)) * (bot - top);
   const pts = vals.map((v, i) => [+X(i).toFixed(1), +Y(v).toFixed(1)]);
@@ -134,16 +162,16 @@ export function LineChart({ vals, labels, tip, o = {} }: { vals: number[]; label
 
   const gridEls: React.ReactNode[] = [];
   if (o.ticks !== false) {
-    for (let t = 0; t < 4; t++) {
-      const v = vhi - pad - (t * (vhi - vlo - 2 * pad)) / 3,
-        y = Y(v);
+    sc.ticks.forEach((tk, t) => {
+      const y = Y(tk / 1000);
+      if (y < top - 1 || y > bot + 1) return; // за пределами области — пропускаем
       gridEls.push(<line key={`g${t}`} className="gridline" x1={padL} y1={+y.toFixed(1)} x2={W - padR} y2={+y.toFixed(1)} />);
       gridEls.push(
         <text key={`t${t}`} className="axis" x={0} y={+(y + 3).toFixed(1)}>
-          {fmtK(v * 1000)}
+          {fmtK(tk)}
         </text>
       );
-    }
+    });
   } else {
     [0.2, 0.55, 0.9].forEach((f, idx) => {
       const y = top + f * (bot - top);

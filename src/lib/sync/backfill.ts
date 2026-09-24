@@ -315,26 +315,40 @@ async function evmDaily(chain: "ETH" | "BSC", address: string, startDayMs: numbe
   return out;
 }
 
-/* ---------- TON-номера: историческая цена номера ---------- */
-// Опционально: URL истории цены номера (nums888). Плейсхолдеры {from}/{to} — unix-сек.
-// Гибкий парсинг ответа. Если не задан/недоступен — используем фолбэк по курсу TON.
-async function fetchNums888History(fromMs: number, toMs: number): Promise<Map<number, number> | null> {
-  const tmpl = process.env.NUMS888_HISTORY_URL;
-  if (!tmpl) return null;
-  const url = tmpl.replace("{from}", String(Math.floor(fromMs / 1000))).replace("{to}", String(Math.floor(toMs / 1000)));
+/* ---------- TON-номера: дневная цена номера в USD (nums888) ----------
+ * Источник — тот же, что рисует график на nums888.io:
+ *   GET https://nums888.io/api/chart-data/  →  { "YYYY-MM-DD": [gram, usd, gramVol, usdVol, ...ohlc] }
+ * Берём индекс 1 (USD-флор). Доступно с VPS (Cloudflare пускает его IP; из песочницы/
+ * GitHub-раннера — 403). URL и индекс переопределяются через ENV. Возвращает
+ * dayMs(UTC-полночь) → цена USD, или null при недоступности (тогда фолбэк — плоско). */
+const UA_BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+async function fetchNums888History(_fromMs: number, _toMs: number): Promise<Map<number, number> | null> {
+  const url = process.env.NUMS888_HISTORY_URL || "https://nums888.io/api/chart-data/";
+  const usdIdx = Number(process.env.NUMS888_USD_INDEX) || 1;
   try {
-    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: sig() });
+    const res = await fetch(url, { headers: { Accept: "application/json", "User-Agent": UA_BROWSER }, signal: sig() });
     if (!res.ok) return null;
     const j: any = await res.json();
-    const rows: any[] = Array.isArray(j) ? j : Array.isArray(j?.prices) ? j.prices : Array.isArray(j?.data) ? j.data : [];
     const out = new Map<number, number>();
-    for (const r of rows) {
-      let ts: number, price: number;
-      if (Array.isArray(r)) { ts = Number(r[0]); price = Number(r[1]); }
-      else { ts = Number(r.t ?? r.time ?? r.timestamp ?? r.date); price = Number(r.usd ?? r.price ?? r.value ?? r.close); }
-      if (!isFinite(ts) || !isFinite(price) || price <= 0) continue;
-      if (ts < 1e12) ts *= 1000; // sec → ms
-      out.set(utcMidnight(ts), price);
+    if (j && typeof j === "object" && !Array.isArray(j)) {
+      // Формат nums888: объект { "YYYY-MM-DD": [gram, usd, ...] }.
+      for (const [date, arr] of Object.entries(j)) {
+        const ms = Date.parse(date + "T00:00:00Z");
+        const price = Array.isArray(arr) ? Number((arr as any[])[usdIdx]) : Number(arr);
+        if (!isFinite(ms) || !isFinite(price) || price <= 0) continue;
+        out.set(utcMidnight(ms), price);
+      }
+    } else {
+      // Запасные форматы: [[ms,usd],...] или {prices|data:[...]}.
+      const rows: any[] = Array.isArray(j) ? j : Array.isArray(j?.prices) ? j.prices : Array.isArray(j?.data) ? j.data : [];
+      for (const r of rows) {
+        let ts: number, price: number;
+        if (Array.isArray(r)) { ts = Number(r[0]); price = Number(r[usdIdx]); }
+        else { ts = Number(r.t ?? r.time ?? r.timestamp ?? r.date); price = Number(r.usd ?? r.price ?? r.value ?? r.close); }
+        if (!isFinite(ts) || !isFinite(price) || price <= 0) continue;
+        if (ts < 1e12) ts *= 1000;
+        out.set(utcMidnight(ts), price);
+      }
     }
     return out.size ? out : null;
   } catch {
