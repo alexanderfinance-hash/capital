@@ -114,7 +114,7 @@ export default function Assets() {
             const isLia = g.key === "liabilities";
             const isIntangible = g.key === "intangible";
             return (
-              <div key={g.key} style={isIntangible ? { borderLeft: `3px solid ${INTANGIBLE_BLUE}` } : undefined}>
+              <div key={g.key}>
                 <div
                   className="mlist-row"
                   style={{ cursor: "pointer", userSelect: "none" }}
@@ -292,7 +292,7 @@ export default function Assets() {
         const total = spheres.reduce((s, a) => s + a.value, 0);
         const top = [...spheres].sort((x, y) => y.value - x.value);
         return (
-          <div className="card" style={{ padding: "8px 22px", marginTop: 20, borderLeft: `3px solid ${INTANGIBLE_BLUE}` }}>
+          <div className="card" style={{ padding: "8px 22px", marginTop: 20 }}>
             <div
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 4px", cursor: "pointer", userSelect: "none" }}
               onClick={() => setWheelOpen((v) => !v)}
