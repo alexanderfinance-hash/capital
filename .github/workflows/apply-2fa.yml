@@ -1,0 +1,74 @@
+name: Apply 2FA (SMTP)
+
+# Вписывает SMTP-данные и включение второго фактора из GitHub-секретов в
+# /opt/capital/.env, пересоздаёт app+worker и шлёт ТЕСТОВОЕ письмо, чтобы сразу
+# проверить отправку. Секреты в логах не печатаются.
+#
+# Нужные GitHub Secrets (Settings → Secrets and variables → Actions):
+#   SMTP_HOST, SMTP_USER, SMTP_PASS   (обязательные)
+#   SMTP_PORT (587/465), SMTP_SECURE ("true" для 465), SMTP_FROM, TWOFA_EMAIL (опц.)
+on:
+  workflow_dispatch:
+    inputs:
+      enable:
+        description: "Включить 2FA (true) или только вписать SMTP (false)"
+        required: false
+        default: "true"
+
+jobs:
+  apply:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inject SMTP, recreate, test mail over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          TWOFA_EMAIL: ${{ secrets.TWOFA_EMAIL }}
+          ENABLE: ${{ github.event.inputs.enable || 'true' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: SMTP_HOST,SMTP_PORT,SMTP_SECURE,SMTP_USER,SMTP_PASS,SMTP_FROM,TWOFA_EMAIL,ENABLE
+          script_stop: false
+          command_timeout: 8m
+          script: |
+            cd /opt/capital || { echo "нет /opt/capital"; exit 1; }
+            if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_USER" ] || [ -z "$SMTP_PASS" ]; then
+              echo "✗ нужны секреты SMTP_HOST, SMTP_USER, SMTP_PASS (GitHub → Settings → Secrets → Actions)"; exit 1
+            fi
+            touch .env
+            setenv() { key="$1"; val="$2"; grep -v "^${key}=" .env > .env.tmp 2>/dev/null || true; mv .env.tmp .env; printf '%s=%s\n' "$key" "$val" >> .env; }
+            setenv SMTP_HOST "$SMTP_HOST"
+            setenv SMTP_USER "$SMTP_USER"
+            setenv SMTP_PASS "$SMTP_PASS"
+            [ -n "$SMTP_PORT" ] && setenv SMTP_PORT "$SMTP_PORT"
+            [ -n "$SMTP_SECURE" ] && setenv SMTP_SECURE "$SMTP_SECURE"
+            [ -n "$SMTP_FROM" ] && setenv SMTP_FROM "$SMTP_FROM"
+            [ -n "$TWOFA_EMAIL" ] && setenv TWOFA_EMAIL "$TWOFA_EMAIL"
+            setenv TWOFA_ENABLED "$ENABLE"
+            echo "=== .env: ключи записаны (значения скрыты) ==="
+            for k in SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_FROM TWOFA_EMAIL TWOFA_ENABLED; do
+              grep -q "^${k}=" .env && echo "  $k: есть" || echo "  $k: нет"
+            done
+            echo "  SMTP_PASS: $(grep -q '^SMTP_PASS=' .env && echo есть || echo нет)"
+            echo "=== пересоздаю app+worker ==="
+            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d app worker 2>&1 | tail -6
+            sleep 10
+            echo "=== тестовое письмо (проверка SMTP) ==="
+            docker exec capital-app-1 node -e '
+              const nm = require("nodemailer");
+              const port = Number(process.env.SMTP_PORT) || 587;
+              const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465;
+              const to = process.env.TWOFA_EMAIL || process.env.SMTP_USER;
+              const t = nm.createTransport({ host: process.env.SMTP_HOST, port, secure, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
+              t.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject: "Тест входа · Финансы", text: "Если вы видите это письмо — SMTP для двухфакторного входа настроен верно." })
+                .then(i => console.log("OK: письмо отправлено на", to, "| id:", i.messageId))
+                .catch(e => console.log("ERR:", String(e).slice(0, 400)));
+            ' 2>&1 | tail -5
