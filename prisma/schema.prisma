@@ -65,6 +65,21 @@ model User {
   createdAt    DateTime @default(now())
 }
 
+/// Одноразовый код второго фактора (вход: пароль → код с почты). Храним ХЭШ кода
+/// с TTL и счётчиком попыток; при успехе/истечении запись удаляется.
+model TwoFactorCode {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  role      String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
 /// Personal assets shown on Обзор / Активы (manual + synced aggregates).
 model Asset {
   id        String      @id @default(cuid())
