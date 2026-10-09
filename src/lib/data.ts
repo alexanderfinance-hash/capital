@@ -322,7 +322,7 @@ export async function getPersonalData(): Promise<PersonalData> {
     const secretRows = await prisma.secretExpenseTxn.findMany();
     const publicBundle = { expenseCats, expenseMonths: months, expenseWeeks, expensesByPeriod, expenseSubs, expenseWeeksByPeriod, expenseWeekSubs, expenseTxns, expenseWeekTxns };
     const expensesWithSecret = secretRows.length
-      ? mergeSecret(publicBundle, secretRows.map((s) => ({ date: s.date, parent: s.parent, sub: s.sub, comment: s.comment, value: num(s.value) })))
+      ? mergeSecret(publicBundle, secretRows.map((s) => ({ date: s.date, parent: s.parent, sub: s.sub, comment: s.comment, value: num(s.value), placeholder: s.placeholder ?? undefined })))
       : undefined;
 
     return {

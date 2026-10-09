@@ -328,12 +328,16 @@ model WalletDailySnapshot {
 /// вливаются в расходы ТОЛЬКО в учётке владельца и только при включённом
 /// переключателе (ограниченный аккаунт «расходы» их не получает вовсе).
 model SecretExpenseTxn {
-  id      String  @id @default(cuid())
-  date    String  // "YYYY-MM-DD"
-  parent  String  // Статья
-  sub     String  // Подстатья
-  comment String
-  value   Decimal @db.Decimal(18, 2) // USD (₽→$ по курсу ЦБ)
+  id          String  @id @default(cuid())
+  date        String  // "YYYY-MM-DD"
+  parent      String  // Статья
+  sub         String  // Подстатья
+  comment     String
+  value       Decimal @db.Decimal(18, 2) // USD (₽→$ по курсу ЦБ)
+  // Комментарий/название строки-заглушки в ОБЩЕЙ ДДС: при включении секрета этот
+  // платёж-заглушку убираем, чтобы не было двойного счёта (та же сумма под другим
+  // названием). Пусто → заглушки нет.
+  placeholder String?
 
   @@index([date])
 }

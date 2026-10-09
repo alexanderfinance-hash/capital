@@ -22,7 +22,7 @@ function periodOfDate(date: string): string | null {
   return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : null;
 }
 
-interface Cols { headerRow: number; date: number; sum: number; comment: number; statya: number; podstatya: number; }
+interface Cols { headerRow: number; date: number; sum: number; comment: number; statya: number; podstatya: number; placeholder: number; }
 function findCols(rows: string[][]): Cols | null {
   for (let r = 0; r < Math.min(rows.length, 40); r++) {
     const cells = (rows[r] || []).map((c) => (c || "").trim().toLowerCase());
@@ -33,7 +33,9 @@ function findCols(rows: string[][]): Cols | null {
       const podstatya = cells.findIndex((c) => c === "подстатья");
       let comment = cells.findIndex((c) => c.includes("коммент"));
       if (comment < 0) comment = 7;
-      return { headerRow: r, date, sum, comment, statya, podstatya: podstatya >= 0 ? podstatya : statya };
+      // Колонка со ссылкой на заглушку в общей ДДС (заглушк/замен/скрыт).
+      const placeholder = cells.findIndex((c) => c.includes("заглушк") || c.includes("замен") || c.includes("скрыт"));
+      return { headerRow: r, date, sum, comment, statya, podstatya: podstatya >= 0 ? podstatya : statya, placeholder };
     }
   }
   return null;
@@ -57,7 +59,7 @@ export async function syncSecretExpenses(): Promise<SecretSyncResult> {
   if (!found) throw new Error("Секретный лист не найден (нет колонок Дата/Сумма/Статья)");
 
   const rate = (await getCurrentUsdRub()) || 95;
-  const rowsOut: { date: string; parent: string; sub: string; comment: string; value: number }[] = [];
+  const rowsOut: { date: string; parent: string; sub: string; comment: string; value: number; placeholder: string | null }[] = [];
   for (let r = found.headerRow + 1; r < found.rows.length; r++) {
     const row = found.rows[r] || [];
     const statya = (row[found.statya] || "").trim();
@@ -69,7 +71,8 @@ export async function syncSecretExpenses(): Promise<SecretSyncResult> {
     const usd = round2(rub / rate);
     if (usd <= 0) continue;
     const sub = (row[found.podstatya] || "").trim() || statya;
-    rowsOut.push({ date: iso, parent: statya, sub, comment: (row[found.comment] || "").trim(), value: usd });
+    const placeholder = found.placeholder >= 0 ? (row[found.placeholder] || "").trim() || null : null;
+    rowsOut.push({ date: iso, parent: statya, sub, comment: (row[found.comment] || "").trim(), value: usd, placeholder });
   }
 
   await prisma.$transaction(async (tx) => {
