@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useApp } from "@/lib/store";
 import { fmt } from "@/lib/format";
 import { Badge, CategoryDonut, catColorMap, Money } from "@/lib/chart";
+import { filterExpensesBySub, bundleHasSub } from "@/lib/expensesFilter";
 import { Topbar } from "../ui";
 
 const fmtSigned = (n: number): string => (n >= 0 ? "+" : "−") + fmt(Math.abs(n));
@@ -485,6 +486,9 @@ function TimelineChart({
   );
 }
 
+/** Подстатья «переводы семье» — её скрывает переключатель «Семейный бюджет». */
+const FAMILY_SUB = "Семейный бюджет";
+
 export default function Expenses({ expensesOnly = false }: { expensesOnly?: boolean }) {
   const { store, usdRub, refreshExpenses, expensesSyncing } = useApp();
   // Секретные расходы Алекса: доступны только владельцу (у ограниченного аккаунта их
@@ -493,8 +497,16 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
   const [secretOn, setSecretOn] = useState(false);
   useEffect(() => { try { const v = localStorage.getItem("expSecretOn"); if (v != null) setSecretOn(v === "1"); } catch { /* ignore */ } }, []);
   const toggleSecret = () => setSecretOn((o) => { const n = !o; try { localStorage.setItem("expSecretOn", n ? "1" : "0"); } catch { /* ignore */ } return n; });
-  // Эффективный набор расходов: с секретом (если включён) или обычный.
-  const E = hasSecret && secretOn && store.expensesWithSecret ? store.expensesWithSecret : store;
+  // Набор с секретом (если включён) или обычный — база до фильтра «Семейный бюджет».
+  const E0 = hasSecret && secretOn && store.expensesWithSecret ? store.expensesWithSecret : store;
+  // «Семейный бюджет» — переводы семье (Наталье). Переключатель скрывает эту подстатью
+  // из расходов и статистики (напр. в версии Натальи), выбор помнится в localStorage.
+  const hasFamily = useMemo(() => bundleHasSub(E0, FAMILY_SUB), [E0]);
+  const [familyOn, setFamilyOn] = useState(true);
+  useEffect(() => { try { const v = localStorage.getItem("expFamilyOn"); if (v != null) setFamilyOn(v === "1"); } catch { /* ignore */ } }, []);
+  const toggleFamily = () => setFamilyOn((o) => { const n = !o; try { localStorage.setItem("expFamilyOn", n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  // Эффективный набор расходов.
+  const E = useMemo(() => (!familyOn && hasFamily ? filterExpensesBySub(E0, [FAMILY_SUB]) : E0), [E0, familyOn, hasFamily]);
   const months = E.expenseMonths;
   const weeks = E.expenseWeeks;
   const lastIdx = months.length - 1;
@@ -790,6 +802,22 @@ export default function Expenses({ expensesOnly = false }: { expensesOnly?: bool
         sub="Импорт из Google Sheets"
         right={
           <>
+            {hasFamily && (
+              <button
+                onClick={toggleFamily}
+                title={familyOn ? "Скрыть переводы семье («Семейный бюджет»)" : "Показать переводы семье («Семейный бюджет»)"}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 8,
+                  border: "1px solid " + (familyOn ? "var(--hair)" : "var(--ink)"),
+                  background: familyOn ? "var(--surface)" : "var(--ink)",
+                  color: familyOn ? "var(--muted)" : "var(--surface)",
+                  cursor: "pointer", fontFamily: "var(--sans)", fontSize: 12, fontWeight: 500,
+                }}
+              >
+                <span style={{ fontSize: 12 }}>👪</span>
+                Семейный бюджет: {familyOn ? "вкл" : "выкл"}
+              </button>
+            )}
             {hasSecret && (
               <button
                 onClick={toggleSecret}
