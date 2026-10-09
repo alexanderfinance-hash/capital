@@ -1,10 +1,13 @@
 /* Слияние секретных расходов Алекса в набор агрегатов расходов.
  *
  * Публичный набор (без секретов) считается синком и остаётся неизменным. Здесь мы
- * строим ВТОРОЙ набор — «с секретом»: те же структуры, но с добавленными секретными
- * платежами (по месяцам/неделям/категориям/подкатегориям/платежам). Дашборд отдаёт
- * этот набор только владельцу; переключатель на экране выбирает, какой набор показать.
- * Публичные структуры НЕ мутируются (делаем глубокие копии). */
+ * строим ВТОРОЙ набор — «с секретом»: берём ПЛАТЕЖИ публичного набора, (1) убираем
+ * строки-заглушки (та же сумма под другим названием в общей ДДС — иначе двойной счёт),
+ * (2) добавляем секретные платежи, (3) ПЕРЕСЧИТЫВАЕМ все итоги (категории/подкатегории/
+ * месяцы/недели) из платежей. Публичные итоги и так равны сумме платежей, поэтому
+ * пересбор снизу вверх даёт корректный и согласованный набор. Публичные структуры НЕ
+ * мутируются (глубокие копии). Набор уходит только владельцу; переключатель на экране
+ * выбирает, какой показать. */
 import type { ExpensesBundle, ExpenseCat, SubCat, ExpenseTxn, ExpenseMonth, ExpenseWeek } from "./types";
 
 export interface SecretTx {
@@ -13,10 +16,13 @@ export interface SecretTx {
   sub: string; // Подстатья
   comment: string;
   value: number; // USD, положительный
+  /** Комментарий/название строки-заглушки в общей ДДС — её убираем при включении секрета. */
+  placeholder?: string;
 }
 
 const MONTH_SHORT = ["", "Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const norm = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 /** Неделя (Пн–Вс), содержащая дату — как в синке расходов. */
 function weekOf(iso: string): { weekEnd: string; label: string } {
@@ -32,118 +38,165 @@ function weekOf(iso: string): { weekEnd: string; label: string } {
   return { weekEnd, label };
 }
 
-type Tree = Map<string, Map<string, Map<string, ExpenseTxn[]>>>; // key → Статья → Подстатья → платежи
-function push(tree: Tree, key: string, parent: string, sub: string, tx: ExpenseTxn) {
+// Дерево платежей: ключ периода → Статья → Подстатья → платежи.
+type Tree = Map<string, Map<string, Map<string, ExpenseTxn[]>>>;
+
+function treeFromRecord(rec: Record<string, Record<string, Record<string, ExpenseTxn[]>>>): Tree {
+  const tree: Tree = new Map();
+  for (const [key, byP] of Object.entries(rec)) {
+    const a = new Map<string, Map<string, ExpenseTxn[]>>();
+    for (const [parent, bySub] of Object.entries(byP)) {
+      const b = new Map<string, ExpenseTxn[]>();
+      for (const [sub, txns] of Object.entries(bySub)) b.set(sub, txns.map((t) => ({ ...t })));
+      a.set(parent, b);
+    }
+    tree.set(key, a);
+  }
+  return tree;
+}
+
+function pushTx(tree: Tree, key: string, parent: string, sub: string, tx: ExpenseTxn) {
   const a = tree.get(key) || tree.set(key, new Map()).get(key)!;
   const b = a.get(parent) || a.set(parent, new Map()).get(parent)!;
   (b.get(sub) || b.set(sub, []).get(sub)!).push(tx);
 }
-function sumTree(byParent: Map<string, Map<string, ExpenseTxn[]>> | undefined): number {
-  let s = 0;
-  if (!byParent) return 0;
-  for (const bySub of byParent.values()) for (const txns of bySub.values()) for (const t of txns) s += t.value;
-  return round2(s);
-}
 
-const cloneCatRec = (r: Record<string, ExpenseCat[]>): Record<string, ExpenseCat[]> =>
-  Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v.map((c) => ({ ...c }))]));
-const cloneSubRec = (r: Record<string, Record<string, SubCat[]>>): Record<string, Record<string, SubCat[]>> =>
-  Object.fromEntries(Object.entries(r).map(([k, byP]) => [k, Object.fromEntries(Object.entries(byP).map(([p, subs]) => [p, subs.map((s) => ({ ...s }))]))]));
-const cloneTxnTree = (t: Record<string, Record<string, Record<string, ExpenseTxn[]>>>) =>
-  Object.fromEntries(Object.entries(t).map(([k, byP]) => [k, Object.fromEntries(Object.entries(byP).map(([p, bySub]) => [p, Object.fromEntries(Object.entries(bySub).map(([s, txns]) => [s, txns.map((x) => ({ ...x }))]))]))]));
+/** Заглушка для сопоставления: по (нормализованному названию, сумме). */
+interface Stub { ref: string; value: number }
 
-/** Влить дерево секретных платежей в byPeriod (категории) + subs + txns одного разреза. */
-function mergeTree(tree: Tree, byPeriod: Record<string, ExpenseCat[]>, subs: Record<string, Record<string, SubCat[]>>, txnTree: Record<string, Record<string, Record<string, ExpenseTxn[]>>>) {
+/** Убрать из дерева платежи-заглушки: совпадает нормализованный комментарий и сумма
+ *  (с небольшим допуском). Пустые подстатьи/статьи/периоды подчищаем. */
+function stripStubs(tree: Tree, stubs: Stub[]) {
+  if (!stubs.length) return;
+  const matches = (tx: ExpenseTxn) => {
+    const c = norm(tx.comment);
+    return stubs.some((s) => s.ref === c && Math.abs(tx.value - s.value) <= Math.max(0.02, s.value * 0.005));
+  };
   for (const [key, byParent] of tree) {
-    const catArr = (byPeriod[key] ||= []);
-    const catIdx = new Map(catArr.map((c, i) => [c.name, i]));
-    const subKey = (subs[key] ||= {});
-    const txKey = (txnTree[key] ||= {});
     for (const [parent, bySub] of byParent) {
-      const subArr = (subKey[parent] ||= []);
-      const subIdx = new Map(subArr.map((s, i) => [s.name, i]));
-      const txParent = (txKey[parent] ||= {});
-      let parentAdd = 0;
       for (const [sub, txns] of bySub) {
-        const subTotal = round2(txns.reduce((s, t) => s + t.value, 0));
-        parentAdd += subTotal;
-        (txParent[sub] ||= []).push(...txns);
-        const si = subIdx.get(sub);
-        if (si != null) subArr[si].value = round2(subArr[si].value + subTotal);
-        else { subArr.push({ name: sub, value: subTotal }); subIdx.set(sub, subArr.length - 1); }
+        const kept = txns.filter((t) => !matches(t));
+        if (kept.length) bySub.set(sub, kept);
+        else bySub.delete(sub);
       }
-      parentAdd = round2(parentAdd);
-      const ci = catIdx.get(parent);
-      if (ci != null) catArr[ci].value = round2(catArr[ci].value + parentAdd);
-      else { catArr.push({ name: parent, value: parentAdd }); catIdx.set(parent, catArr.length - 1); }
+      if (!bySub.size) byParent.delete(parent);
     }
-    catArr.sort((a, b) => b.value - a.value);
-    for (const p of Object.keys(subKey)) subKey[p].sort((a, b) => b.value - a.value);
+    if (!byParent.size) tree.delete(key);
   }
 }
 
-/** pub (без секретов) + секретные платежи → набор «с секретом». */
+/** Пересчитать агрегаты (категории/подкатегории/платежи/итоги периода) из дерева. */
+function aggregate(tree: Tree): {
+  byPeriod: Record<string, ExpenseCat[]>;
+  subs: Record<string, Record<string, SubCat[]>>;
+  txns: Record<string, Record<string, Record<string, ExpenseTxn[]>>>;
+  totals: Map<string, number>;
+} {
+  const byPeriod: Record<string, ExpenseCat[]> = {};
+  const subs: Record<string, Record<string, SubCat[]>> = {};
+  const txns: Record<string, Record<string, Record<string, ExpenseTxn[]>>> = {};
+  const totals = new Map<string, number>();
+  for (const [key, byParent] of tree) {
+    const cats: ExpenseCat[] = [];
+    const subMap: Record<string, SubCat[]> = {};
+    const txP: Record<string, Record<string, ExpenseTxn[]>> = {};
+    let periodTotal = 0;
+    for (const [parent, bySub] of byParent) {
+      const subArr: SubCat[] = [];
+      const txSub: Record<string, ExpenseTxn[]> = {};
+      let parentTotal = 0;
+      for (const [sub, list] of bySub) {
+        if (!list.length) continue;
+        const v = round2(list.reduce((s, t) => s + t.value, 0));
+        subArr.push({ name: sub, value: v });
+        txSub[sub] = list;
+        parentTotal += v;
+      }
+      if (!subArr.length) continue;
+      subArr.sort((a, b) => b.value - a.value);
+      subMap[parent] = subArr;
+      txP[parent] = txSub;
+      const pt = round2(parentTotal);
+      cats.push({ name: parent, value: pt });
+      periodTotal += pt;
+    }
+    cats.sort((a, b) => b.value - a.value);
+    byPeriod[key] = cats;
+    subs[key] = subMap;
+    txns[key] = txP;
+    totals.set(key, round2(periodTotal));
+  }
+  return { byPeriod, subs, txns, totals };
+}
+
+/** pub (без секретов) + секретные платежи − заглушки → набор «с секретом». */
 export function mergeSecret(pub: ExpensesBundle, secret: SecretTx[]): ExpensesBundle {
   if (!secret.length) return pub;
-  const monthTree: Tree = new Map();
-  const weekTree: Tree = new Map();
+
+  // 1) Платежи публичного набора (копии).
+  const monthTree = treeFromRecord(pub.expenseTxns);
+  const weekTree = treeFromRecord(pub.expenseWeekTxns);
+
+  // 2) Убрать заглушки (по строкам секретной таблицы, где указана заглушка).
+  const stubs: Stub[] = [];
+  for (const t of secret) {
+    if (t.placeholder && t.placeholder.trim() && t.value > 0) stubs.push({ ref: norm(t.placeholder), value: round2(t.value) });
+  }
+  stripStubs(monthTree, stubs);
+  stripStubs(weekTree, stubs);
+
+  // 3) Влить секретные платежи.
   const weekLabel = new Map<string, string>();
   for (const t of secret) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(t.date) || !(t.value > 0)) continue;
     const tx: ExpenseTxn = { date: t.date, comment: t.comment, value: round2(t.value) };
     const parent = t.parent || "Прочее";
     const sub = t.sub || parent;
-    push(monthTree, t.date.slice(0, 7), parent, sub, tx);
+    pushTx(monthTree, t.date.slice(0, 7), parent, sub, tx);
     const wk = weekOf(t.date);
     weekLabel.set(wk.weekEnd, wk.label);
-    push(weekTree, wk.weekEnd, parent, sub, tx);
+    pushTx(weekTree, wk.weekEnd, parent, sub, tx);
   }
 
-  const out: ExpensesBundle = {
-    expenseCats: pub.expenseCats.map((c) => ({ ...c })),
-    expenseMonths: pub.expenseMonths.map((m) => ({ ...m })),
-    expenseWeeks: pub.expenseWeeks.map((w) => ({ ...w })),
-    expensesByPeriod: cloneCatRec(pub.expensesByPeriod),
-    expenseSubs: cloneSubRec(pub.expenseSubs),
-    expenseWeeksByPeriod: cloneCatRec(pub.expenseWeeksByPeriod),
-    expenseWeekSubs: cloneSubRec(pub.expenseWeekSubs),
-    expenseTxns: cloneTxnTree(pub.expenseTxns),
-    expenseWeekTxns: cloneTxnTree(pub.expenseWeekTxns),
+  // 4) Пересчитать агрегаты из деревьев.
+  const m = aggregate(monthTree);
+  const w = aggregate(weekTree);
+
+  // Месяцы: сохраняем scaffolding публичных месяцев (label/income), итог v берём из
+  // пересчёта (0, если платежи периода исчезли); добавляем новые месяцы из секрета.
+  const monthByPeriod = new Map<string, ExpenseMonth>();
+  for (const mo of pub.expenseMonths) {
+    const period = mo.period || "";
+    monthByPeriod.set(period, { ...mo, v: round2(m.totals.get(period) ?? 0) });
+  }
+  for (const [period, total] of m.totals) {
+    if (monthByPeriod.has(period)) continue;
+    const mon = Number(period.split("-")[1]);
+    monthByPeriod.set(period, { m: MONTH_SHORT[mon] || period, v: round2(total), income: 0, period });
+  }
+  const expenseMonths = [...monthByPeriod.values()].sort((a, b) => (a.period || "").localeCompare(b.period || ""));
+
+  // Недели: аналогично.
+  const weekByEnd = new Map<string, ExpenseWeek>();
+  for (const wk of pub.expenseWeeks) weekByEnd.set(wk.weekEnd, { ...wk, v: round2(w.totals.get(wk.weekEnd) ?? 0) });
+  for (const [weekEnd, total] of w.totals) {
+    if (weekByEnd.has(weekEnd)) continue;
+    weekByEnd.set(weekEnd, { w: weekLabel.get(weekEnd) || weekEnd, v: round2(total), weekEnd, income: 0 });
+  }
+  const expenseWeeks = [...weekByEnd.values()].sort((a, b) => a.weekEnd.localeCompare(b.weekEnd));
+
+  const latest = expenseMonths.length ? expenseMonths[expenseMonths.length - 1].period || "" : "";
+  const expenseCats = (m.byPeriod[latest] || []).slice();
+
+  return {
+    expenseCats,
+    expenseMonths,
+    expenseWeeks,
+    expensesByPeriod: m.byPeriod,
+    expenseSubs: m.subs,
+    expenseWeeksByPeriod: w.byPeriod,
+    expenseWeekSubs: w.subs,
+    expenseTxns: m.txns,
+    expenseWeekTxns: w.txns,
   };
-
-  mergeTree(monthTree, out.expensesByPeriod, out.expenseSubs, out.expenseTxns);
-  mergeTree(weekTree, out.expenseWeeksByPeriod, out.expenseWeekSubs, out.expenseWeekTxns);
-
-  // Месячные итоги: добавляем секрет к существующему месяцу или заводим месяц.
-  const monthByPeriod = new Map<string, ExpenseMonth>(out.expenseMonths.map((m) => [m.period || "", m]));
-  for (const period of monthTree.keys()) {
-    const add = sumTree(monthTree.get(period));
-    const ex = monthByPeriod.get(period);
-    if (ex) ex.v = round2(ex.v + add);
-    else {
-      const [y, mo] = period.split("-").map(Number);
-      void y;
-      const nm: ExpenseMonth = { m: MONTH_SHORT[mo] || period, v: round2(add), income: 0, period };
-      out.expenseMonths.push(nm);
-      monthByPeriod.set(period, nm);
-    }
-  }
-  out.expenseMonths.sort((a, b) => (a.period || "").localeCompare(b.period || ""));
-
-  const weekByEnd = new Map<string, ExpenseWeek>(out.expenseWeeks.map((w) => [w.weekEnd, w]));
-  for (const weekEnd of weekTree.keys()) {
-    const add = sumTree(weekTree.get(weekEnd));
-    const ex = weekByEnd.get(weekEnd);
-    if (ex) ex.v = round2(ex.v + add);
-    else {
-      const nw: ExpenseWeek = { w: weekLabel.get(weekEnd) || weekEnd, v: round2(add), weekEnd, income: 0 };
-      out.expenseWeeks.push(nw);
-      weekByEnd.set(weekEnd, nw);
-    }
-  }
-  out.expenseWeeks.sort((a, b) => a.weekEnd.localeCompare(b.weekEnd));
-
-  const latest = out.expenseMonths.length ? out.expenseMonths[out.expenseMonths.length - 1].period || "" : "";
-  out.expenseCats = (out.expensesByPeriod[latest] || []).slice().sort((a, b) => b.value - a.value);
-  return out;
 }
