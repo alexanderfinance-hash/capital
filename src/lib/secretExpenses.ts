@@ -61,21 +61,17 @@ function pushTx(tree: Tree, key: string, parent: string, sub: string, tx: Expens
   (b.get(sub) || b.set(sub, []).get(sub)!).push(tx);
 }
 
-/** Заглушка для сопоставления: по (нормализованному названию, сумме). */
-interface Stub { ref: string; value: number }
-
-/** Убрать из дерева платежи-заглушки: совпадает нормализованный комментарий и сумма
- *  (с небольшим допуском). Пустые подстатьи/статьи/периоды подчищаем. */
-function stripStubs(tree: Tree, stubs: Stub[]) {
-  if (!stubs.length) return;
-  const matches = (tx: ExpenseTxn) => {
-    const c = norm(tx.comment);
-    return stubs.some((s) => s.ref === c && Math.abs(tx.value - s.value) <= Math.max(0.02, s.value * 0.005));
-  };
+/** Убрать из дерева платежи-заглушки: публичный платёж, чей нормализованный
+ *  комментарий совпал с указанной в секретной таблице заглушкой. Сумму НЕ сверяем —
+ *  заглушку (возможно, итемизированную несколькими строками) убираем целиком, а
+ *  реальные секретные траты добавляются отдельно. Пустые подстатьи/статьи/периоды
+ *  подчищаем. */
+function stripStubs(tree: Tree, refs: Set<string>) {
+  if (!refs.size) return;
   for (const [key, byParent] of tree) {
     for (const [parent, bySub] of byParent) {
       for (const [sub, txns] of bySub) {
-        const kept = txns.filter((t) => !matches(t));
+        const kept = txns.filter((t) => !refs.has(norm(t.comment)));
         if (kept.length) bySub.set(sub, kept);
         else bySub.delete(sub);
       }
@@ -137,13 +133,14 @@ export function mergeSecret(pub: ExpensesBundle, secret: SecretTx[]): ExpensesBu
   const monthTree = treeFromRecord(pub.expenseTxns);
   const weekTree = treeFromRecord(pub.expenseWeekTxns);
 
-  // 2) Убрать заглушки (по строкам секретной таблицы, где указана заглушка).
-  const stubs: Stub[] = [];
+  // 2) Убрать заглушки (по строкам секретной таблицы, где указана заглушка) — по
+  //    совпадению комментария (сумму не сверяем, см. stripStubs).
+  const stubRefs = new Set<string>();
   for (const t of secret) {
-    if (t.placeholder && t.placeholder.trim() && t.value > 0) stubs.push({ ref: norm(t.placeholder), value: round2(t.value) });
+    if (t.placeholder && t.placeholder.trim()) stubRefs.add(norm(t.placeholder));
   }
-  stripStubs(monthTree, stubs);
-  stripStubs(weekTree, stubs);
+  stripStubs(monthTree, stubRefs);
+  stripStubs(weekTree, stubRefs);
 
   // 3) Влить секретные платежи.
   const weekLabel = new Map<string, string>();
